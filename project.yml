@@ -1,0 +1,30 @@
+name: AIResponse
+options:
+  minimumXcodeGenVersion: 2.40.0
+  deploymentTarget:
+    iOS: '17.0'
+settings:
+  base:
+    PRODUCT_BUNDLE_IDENTIFIER: com.fatihersoy.airesponse
+    SWIFT_VERSION: 5.0
+targets:
+  AIResponse:
+    type: application
+    platform: iOS
+    deploymentTarget: '17.0'
+    sources:
+      - path: ios/AIResponse
+    info:
+      path: ios/AIResponse/Resources/Info.plist
+      properties:
+        UILaunchScreen: {}
+        NSMicrophoneUsageDescription: Uygulama, sesinizi dinleyip metne çevirmek için mikrofona erişir.
+        NSSpeechRecognitionUsageDescription: Uygulama, konuşmayı algılayıp AI yanıtı üretmek için konuşma tanıma kullanır.
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+    settings:
+      base:
+        TARGETED_DEVICE_FAMILY: '1,2'
+        INFOPLIST_FILE: ios/AIResponse/Resources/Info.plist
+    scheme:
+      testTargets: []
