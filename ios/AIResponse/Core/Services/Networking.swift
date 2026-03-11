@@ -5,17 +5,22 @@ enum APIError: LocalizedError {
     case server(Int, String?)   // code + optional server message
     case decoding
 
+    var isUnauthorized: Bool {
+        if case .server(401, _) = self { return true }
+        return false
+    }
+
     var errorDescription: String? {
         switch self {
         case .invalidResponse:
-            return "Sunucudan geçersiz yanıt alındı"
+            return "Invalid response from server"
         case .server(let code, let message):
             if let msg = message, !msg.isEmpty {
                 return msg
             }
-            return "Sunucu hatası: \(code)"
+            return "Server error: \(code)"
         case .decoding:
-            return "Sunucu yanıtı çözümlenemedi"
+            return "Could not parse server response"
         }
     }
 }

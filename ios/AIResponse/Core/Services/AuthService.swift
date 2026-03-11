@@ -29,6 +29,10 @@ struct AuthService {
         return try JSONDecoder().decode(AuthResponse.self, from: data).toSession()
     }
 
+    func me(token: String) async throws -> Void {
+        _ = try await api.request(path: "/auth/me", token: token)
+    }
+
     func logout(token: String) async throws {
         _ = try await api.request(path: "/auth/logout", method: "POST", token: token)
     }

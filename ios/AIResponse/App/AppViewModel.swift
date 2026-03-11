@@ -11,8 +11,24 @@ final class AppViewModel: ObservableObject {
 
     init(authService: AuthService = AuthService()) {
         self.authService = authService
-        // Restore saved session on launch
+        // Restore saved session on launch, then verify it's still valid
         session = KeychainService.loadSession()
+        if session != nil {
+            Task { await verifySession() }
+        }
+    }
+
+    /// Ping /auth/me — if the stored token is rejected (401) silently log out.
+    private func verifySession() async {
+        guard let token = session?.accessToken else { return }
+        do {
+            _ = try await authService.me(token: token)
+        } catch let error as APIError where error.isUnauthorized {
+            KeychainService.deleteSession()
+            session = nil
+        } catch {
+            // Network error or other — keep the session, try again later
+        }
     }
 
     var isAuthenticated: Bool { session != nil }
@@ -26,7 +42,7 @@ final class AppViewModel: ObservableObject {
             KeychainService.saveSession(s)
             session = s
         } catch {
-            errorMessage = error.localizedDescription
+            handle(error: error)
         }
     }
 
@@ -39,7 +55,7 @@ final class AppViewModel: ObservableObject {
             KeychainService.saveSession(s)
             session = s
         } catch {
-            errorMessage = error.localizedDescription
+            handle(error: error)
         }
     }
 
@@ -84,6 +100,15 @@ final class AppViewModel: ObservableObject {
                 throw error
             }
         } catch {
+            handle(error: error)
+        }
+    }
+
+    private func handle(error: Error) {
+        if let api = error as? APIError, api.isUnauthorized {
+            KeychainService.deleteSession()
+            session = nil
+        } else {
             errorMessage = error.localizedDescription
         }
     }
