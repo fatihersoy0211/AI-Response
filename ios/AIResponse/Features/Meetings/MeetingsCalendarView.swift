@@ -5,6 +5,7 @@ struct MeetingsCalendarView: View {
     let openLiveMeeting: () -> Void
 
     @State private var mode: AgendaMode = .daily
+    @State private var prepareMeeting: MeetingDigest? = nil
 
     var body: some View {
         ScrollView {
@@ -32,8 +33,12 @@ struct MeetingsCalendarView: View {
                         .buttonStyle(.plain)
 
                         HStack {
-                            DSButton(title: "Join", icon: "video.fill", kind: .secondary) {}
-                            DSButton(title: "Prepare", icon: "sparkles", kind: .secondary) {}
+                            DSButton(title: "Join", icon: "video.fill", kind: .secondary) {
+                                openLiveMeeting()
+                            }
+                            DSButton(title: "Prepare", icon: "sparkles", kind: .secondary) {
+                                prepareMeeting = meeting
+                            }
                         }
                     }
                 }
@@ -50,6 +55,9 @@ struct MeetingsCalendarView: View {
         }
         .background(DS.ColorToken.canvas)
         .navigationTitle("Meetings")
+        .navigationDestination(item: $prepareMeeting) { meeting in
+            MeetingDetailsView(meeting: meeting)
+        }
     }
 }
 
