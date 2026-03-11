@@ -69,6 +69,17 @@ class AppleAuthRequest(BaseModel):
     email: str | None = None    # Only provided on first sign-in
 
 
+class ChatMessageSchema(BaseModel):
+    role: str = Field(pattern="^(user|assistant)$")
+    content: str = Field(min_length=1, max_length=5_000)
+
+
+class AIChatRequest(BaseModel):
+    projectId: str = Field(min_length=1)
+    messages: list[ChatMessageSchema] = Field(min_length=1, max_length=30)
+    userName: str | None = Field(default=None, max_length=120)
+
+
 class AIRespondRequest(BaseModel):
     projectId: str = Field(min_length=1)
     # transcript may be empty — AI will still respond from project context

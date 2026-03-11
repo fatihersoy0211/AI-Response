@@ -21,6 +21,34 @@
                ReferencedContainer = "container:AIResponse.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
+<BuildActionEntry
+   buildForTesting = "YES"
+   buildForRunning = "NO"
+   buildForProfiling = "NO"
+   buildForArchiving = "NO"
+   buildForAnalyzing = "NO">
+   <BuildableReference
+      BuildableIdentifier = "primary"
+      BlueprintIdentifier = "A1C100000000000000000401"
+      BuildableName = "AIResponseTests.xctest"
+      BlueprintName = "AIResponseTests"
+      ReferencedContainer = "container:AIResponse.xcodeproj">
+   </BuildableReference>
+</BuildActionEntry>
+<BuildActionEntry
+   buildForTesting = "YES"
+   buildForRunning = "NO"
+   buildForProfiling = "NO"
+   buildForArchiving = "NO"
+   buildForAnalyzing = "NO">
+   <BuildableReference
+      BuildableIdentifier = "primary"
+      BlueprintIdentifier = "A1C100000000000000000402"
+      BuildableName = "AIResponseUITests.xctest"
+      BlueprintName = "AIResponseUITests"
+      ReferencedContainer = "container:AIResponse.xcodeproj">
+   </BuildableReference>
+</BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
    <TestAction
@@ -39,6 +67,26 @@
          </BuildableReference>
       </MacroExpansion>
       <Testables>
+<TestableReference
+   skipped = "NO">
+   <BuildableReference
+      BuildableIdentifier = "primary"
+      BlueprintIdentifier = "A1C100000000000000000401"
+      BuildableName = "AIResponseTests.xctest"
+      BlueprintName = "AIResponseTests"
+      ReferencedContainer = "container:AIResponse.xcodeproj">
+   </BuildableReference>
+</TestableReference>
+<TestableReference
+   skipped = "NO">
+   <BuildableReference
+      BuildableIdentifier = "primary"
+      BlueprintIdentifier = "A1C100000000000000000402"
+      BuildableName = "AIResponseUITests.xctest"
+      BlueprintName = "AIResponseUITests"
+      ReferencedContainer = "container:AIResponse.xcodeproj">
+   </BuildableReference>
+</TestableReference>
       </Testables>
       <CommandLineArguments>
       </CommandLineArguments>

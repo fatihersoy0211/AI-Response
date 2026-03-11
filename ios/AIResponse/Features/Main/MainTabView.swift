@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MainTabView: View {
     let session: UserSession
+    let dependencies: AppDependencies
 
     @State private var selectedTab: MainTab = .home
     @State private var showLiveMeeting = false
@@ -9,7 +10,7 @@ struct MainTabView: View {
     var body: some View {
         TabView(selection: $selectedTab) {
             NavigationStack {
-                HomeDashboardView(session: session, openLiveMeeting: { showLiveMeeting = true })
+                HomeDashboardView(session: session, dependencies: dependencies, openLiveMeeting: { showLiveMeeting = true })
             }
             .tabItem {
                 Label("Home", systemImage: "house")
@@ -25,12 +26,12 @@ struct MainTabView: View {
             .tag(MainTab.meetings)
 
             NavigationStack {
-                ActionItemsScreen()
+                AIChatView(session: session, dependencies: dependencies)
             }
             .tabItem {
-                Label("Action Items", systemImage: "checkmark.circle")
+                Label("AI Chat", systemImage: "bubble.left.and.sparkles")
             }
-            .tag(MainTab.actions)
+            .tag(MainTab.chat)
 
             NavigationStack {
                 GlobalSearchScreen()
@@ -51,7 +52,7 @@ struct MainTabView: View {
         .tint(DS.ColorToken.primary)
         .fullScreenCover(isPresented: $showLiveMeeting) {
             NavigationStack {
-                LiveMeetingView(session: session, autoStartListening: true)
+                LiveMeetingView(session: session, dependencies: dependencies, autoStartListening: true)
             }
         }
     }
@@ -60,7 +61,7 @@ struct MainTabView: View {
 enum MainTab {
     case home
     case meetings
-    case actions
+    case chat
     case search
     case settings
 }

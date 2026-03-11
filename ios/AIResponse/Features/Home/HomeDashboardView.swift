@@ -3,12 +3,15 @@ import UniformTypeIdentifiers
 
 struct HomeDashboardView: View {
     let session: UserSession
+    let dependencies: AppDependencies
     let openLiveMeeting: () -> Void
 
     @State private var searchText = ""
     @State private var showUploadAudio = false
     @State private var showJoinMeeting = false
     @State private var showAISummary = false
+    @State private var projects: [UserProject] = []
+    @State private var uploadProjectId: String = ""
 
     var body: some View {
         ScrollView {
@@ -58,14 +61,28 @@ struct HomeDashboardView: View {
         }
         .background(DS.ColorToken.canvas)
         .navigationTitle("Dashboard")
+        .task {
+            if let loaded = try? await dependencies.projectRepository.listProjects(token: session.accessToken) {
+                projects = loaded
+                if uploadProjectId.isEmpty, let first = loaded.first {
+                    uploadProjectId = first.projectId
+                }
+            }
+        }
         .sheet(isPresented: $showUploadAudio) {
-            UploadAudioSheet(isPresented: $showUploadAudio)
+            UploadAudioSheet(
+                isPresented: $showUploadAudio,
+                session: session,
+                projectRepository: dependencies.projectRepository,
+                projects: projects,
+                selectedProjectId: $uploadProjectId
+            )
         }
         .sheet(isPresented: $showJoinMeeting) {
             JoinMeetingSheet(isPresented: $showJoinMeeting, openLiveMeeting: openLiveMeeting)
         }
         .navigationDestination(isPresented: $showAISummary) {
-            AISummaryScreen()
+            AISummaryScreen(session: session, dependencies: dependencies)
                 .navigationTitle("AI Summary")
         }
     }
@@ -90,6 +107,19 @@ struct HomeDashboardView: View {
                     .stroke(DS.ColorToken.border, lineWidth: 1)
             )
         }
+        .modifier(QuickActionAccessibilityModifier(identifier: title == "Start Recording" ? "startRecordingButton" : nil))
+    }
+}
+
+private struct QuickActionAccessibilityModifier: ViewModifier {
+    let identifier: String?
+
+    func body(content: Content) -> some View {
+        if let identifier {
+            content.accessibilityIdentifier(identifier)
+        } else {
+            content
+        }
     }
 }
 
@@ -97,9 +127,16 @@ struct HomeDashboardView: View {
 
 struct UploadAudioSheet: View {
     @Binding var isPresented: Bool
+    let session: UserSession
+    let projectRepository: any ProjectRepository
+    let projects: [UserProject]
+    @Binding var selectedProjectId: String
+
     @State private var isFileImporterPresented = false
     @State private var uploadedFileName: String? = nil
+    @State private var uploadedURL: URL? = nil
     @State private var isUploading = false
+    @State private var uploadError: String? = nil
 
     private let allowedTypes: [UTType] = [
         .audio,
@@ -117,6 +154,34 @@ struct UploadAudioSheet: View {
                         title: "Upload Audio",
                         message: "Upload a meeting recording to automatically generate a transcript and AI summary."
                     )
+
+                    // Project picker
+                    if !projects.isEmpty {
+                        VStack(alignment: .leading, spacing: DS.Spacing.x8) {
+                            Text("Project")
+                                .font(DS.Typography.caption)
+                                .foregroundStyle(DS.ColorToken.textSecondary)
+                            Picker("Project", selection: $selectedProjectId) {
+                                ForEach(projects) { project in
+                                    Text(project.name).tag(project.projectId)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .padding(.horizontal, DS.Spacing.x12)
+                            .padding(.vertical, DS.Spacing.x8)
+                            .background(DS.ColorToken.surface)
+                            .clipShape(RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous)
+                                    .stroke(DS.ColorToken.border, lineWidth: 1)
+                            )
+                        }
+                    } else {
+                        DSAIInsightCard(
+                            title: "No projects found",
+                            message: "Create a project in the AI Assistant tab first, then upload audio."
+                        )
+                    }
 
                     VStack(alignment: .leading, spacing: DS.Spacing.x12) {
                         Text("Supported formats")
@@ -146,6 +211,13 @@ struct UploadAudioSheet: View {
                         .dsCardStyle()
                     }
 
+                    if let error = uploadError {
+                        Text(error)
+                            .font(DS.Typography.caption)
+                            .foregroundStyle(DS.ColorToken.error)
+                            .dsCardStyle()
+                    }
+
                     DSButton(
                         title: uploadedFileName == nil ? "Choose Audio File" : "Change File",
                         icon: "doc.badge.plus",
@@ -159,13 +231,10 @@ struct UploadAudioSheet: View {
                             title: "Process Audio",
                             icon: "sparkles",
                             kind: .primary,
-                            isLoading: isUploading
+                            isLoading: isUploading,
+                            isDisabled: selectedProjectId.isEmpty
                         ) {
-                            isUploading = true
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                                isUploading = false
-                                isPresented = false
-                            }
+                            processAudio()
                         }
                     }
                 }
@@ -185,7 +254,43 @@ struct UploadAudioSheet: View {
             ) { result in
                 if case .success(let urls) = result, let url = urls.first {
                     uploadedFileName = url.lastPathComponent
+                    uploadedURL = url
+                    uploadError = nil
                 }
+            }
+        }
+    }
+
+    private func processAudio() {
+        guard let url = uploadedURL, !selectedProjectId.isEmpty else { return }
+        isUploading = true
+        uploadError = nil
+        Task {
+            do {
+                let access = url.startAccessingSecurityScopedResource()
+                defer { if access { url.stopAccessingSecurityScopedResource() } }
+                let fileData = try Data(contentsOf: url)
+                let ext = url.pathExtension.lowercased()
+                let mimeType: String
+                switch ext {
+                case "mp3": mimeType = "audio/mpeg"
+                case "m4a": mimeType = "audio/m4a"
+                case "wav": mimeType = "audio/wav"
+                case "aac": mimeType = "audio/aac"
+                default:    mimeType = "audio/mpeg"
+                }
+                _ = try await projectRepository.uploadFileSource(
+                    projectId: selectedProjectId,
+                    fileName: url.lastPathComponent,
+                    mimeType: mimeType,
+                    fileData: fileData,
+                    token: session.accessToken
+                )
+                isUploading = false
+                isPresented = false
+            } catch {
+                isUploading = false
+                uploadError = error.localizedDescription
             }
         }
     }
@@ -206,12 +311,12 @@ struct JoinMeetingSheet: View {
                 VStack(alignment: .leading, spacing: DS.Spacing.x24) {
                     DSAIInsightCard(
                         title: "Join Meeting",
-                        message: "Enter a meeting code or link to join and enable AI assistance in real time."
+                        message: "Enter a meeting link to open it directly in the meeting app. The AI assistant will start listening automatically."
                     )
 
                     VStack(spacing: DS.Spacing.x12) {
                         inputField(title: "Meeting Name (optional)", placeholder: "e.g. Q2 Product Review", text: $meetingName, keyboard: .default)
-                        inputField(title: "Meeting Code or Link", placeholder: "Paste link or enter code", text: $meetingCode, keyboard: .URL)
+                        inputField(title: "Meeting Link or Code", placeholder: "Paste link or enter code", text: $meetingCode, keyboard: .URL)
                     }
                     .padding(DS.Spacing.x16)
                     .background(DS.ColorToken.surface)
@@ -224,20 +329,29 @@ struct JoinMeetingSheet: View {
                     DSSectionHeader(title: "Quick Platform")
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: DS.Spacing.x8) {
-                            ForEach(["Zoom", "Google Meet", "Teams", "Webex"], id: \.self) { platform in
+                            ForEach(meetingPlatforms, id: \.name) { platform in
                                 Button {
-                                    meetingCode = "\(platform.lowercased().replacingOccurrences(of: " ", with: "")).meeting/join"
+                                    meetingCode = platform.exampleLink
                                 } label: {
-                                    DSBadge(text: platform, tone: DS.ColorToken.primary)
+                                    DSBadge(text: platform.name, tone: DS.ColorToken.primary)
                                 }
                             }
                         }
                     }
 
                     DSButton(
-                        title: "Start with AI Assistant",
-                        icon: "mic.fill",
+                        title: "Open Meeting & Start AI",
+                        icon: "arrow.up.right.square",
                         kind: .primary,
+                        isDisabled: meetingCode.isEmpty
+                    ) {
+                        openMeetingAndStartAI()
+                    }
+
+                    DSButton(
+                        title: "AI Assistant Only",
+                        icon: "mic.fill",
+                        kind: .secondary,
                         isDisabled: meetingCode.isEmpty
                     ) {
                         isPresented = false
@@ -254,6 +368,40 @@ struct JoinMeetingSheet: View {
                 }
             }
         }
+    }
+
+    private struct MeetingPlatform {
+        let name: String
+        let exampleLink: String
+        let urlScheme: String?
+    }
+
+    private let meetingPlatforms: [MeetingPlatform] = [
+        MeetingPlatform(name: "Zoom", exampleLink: "https://zoom.us/j/", urlScheme: "zoommtg://"),
+        MeetingPlatform(name: "Google Meet", exampleLink: "https://meet.google.com/", urlScheme: nil),
+        MeetingPlatform(name: "Teams", exampleLink: "https://teams.microsoft.com/l/meetup-join/", urlScheme: "msteams://")
+    ]
+
+    private func openMeetingAndStartAI() {
+        // Try to open the meeting URL externally
+        if let url = URL(string: meetingCode), meetingCode.hasPrefix("http") {
+            // For Zoom: convert https to zoommtg scheme
+            var targetURL = url
+            if meetingCode.contains("zoom.us") {
+                let zoomScheme = meetingCode.replacingOccurrences(of: "https://", with: "zoommtg://")
+                if let zoomURL = URL(string: zoomScheme), UIApplication.shared.canOpenURL(zoomURL) {
+                    targetURL = zoomURL
+                }
+            } else if meetingCode.contains("teams.microsoft.com") {
+                let teamsScheme = meetingCode.replacingOccurrences(of: "https://", with: "msteams://")
+                if let teamsURL = URL(string: teamsScheme), UIApplication.shared.canOpenURL(teamsURL) {
+                    targetURL = teamsURL
+                }
+            }
+            UIApplication.shared.open(targetURL, options: [:], completionHandler: nil)
+        }
+        isPresented = false
+        openLiveMeeting()
     }
 
     private func inputField(title: String, placeholder: String, text: Binding<String>, keyboard: UIKeyboardType) -> some View {

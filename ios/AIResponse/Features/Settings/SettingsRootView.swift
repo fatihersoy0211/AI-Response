@@ -252,24 +252,52 @@ struct ProfileScreen: View {
 // MARK: - Integrations
 
 struct IntegrationsScreen: View {
-    @State private var connections: [String: Bool] = [
-        "Zoom": false,
-        "Google Meet": false,
-        "Microsoft Teams": false,
-        "Google Calendar": false,
-        "Slack": false,
-        "Notion": false,
-        "CRM": false
+    private struct Platform: Identifiable {
+        let id: String
+        let name: String
+        let subtitle: String
+        let icon: String
+        let urlScheme: String
+        let fallbackURL: String
+    }
+
+    private let platforms: [Platform] = [
+        Platform(
+            id: "zoom",
+            name: "Zoom",
+            subtitle: "Video conferencing",
+            icon: "video.fill",
+            urlScheme: "zoommtg://zoom.us/join",
+            fallbackURL: "https://zoom.us"
+        ),
+        Platform(
+            id: "googlemeet",
+            name: "Google Meet",
+            subtitle: "Google Workspace meetings",
+            icon: "person.2.fill",
+            urlScheme: "https://meet.google.com",
+            fallbackURL: "https://meet.google.com"
+        ),
+        Platform(
+            id: "teams",
+            name: "Microsoft Teams",
+            subtitle: "Microsoft 365 collaboration",
+            icon: "building.2.fill",
+            urlScheme: "msteams://",
+            fallbackURL: "https://teams.microsoft.com"
+        )
     ]
-    private let order = ["Zoom", "Google Meet", "Microsoft Teams", "Google Calendar", "Slack", "Notion", "CRM"]
 
     var body: some View {
         ScrollView {
-            VStack(spacing: DS.Spacing.x12) {
-                ForEach(order, id: \.self) { name in
-                    let connected = connections[name] ?? false
-                    integrationCard(name, connected: connected) {
-                        connections[name] = !connected
+            VStack(alignment: .leading, spacing: DS.Spacing.x16) {
+                DSAIInsightCard(
+                    title: "Meeting Integrations",
+                    message: "Tap Launch to open your meeting app. AI Meeting Assist will start recording automatically."
+                )
+                VStack(spacing: DS.Spacing.x12) {
+                    ForEach(platforms) { platform in
+                        platformCard(platform)
                     }
                 }
             }
@@ -279,20 +307,50 @@ struct IntegrationsScreen: View {
         .navigationTitle("Integrations")
     }
 
-    private func integrationCard(_ name: String, connected: Bool, action: @escaping () -> Void) -> some View {
-        HStack {
+    private func platformCard(_ platform: Platform) -> some View {
+        HStack(spacing: DS.Spacing.x12) {
+            Image(systemName: platform.icon)
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(DS.ColorToken.primary)
+                .frame(width: 40, height: 40)
+                .background(DS.ColorToken.primarySoft)
+                .clipShape(RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous))
+
             VStack(alignment: .leading, spacing: DS.Spacing.x4) {
-                Text(name)
+                Text(platform.name)
                     .font(DS.Typography.bodyMedium)
-                Text(connected ? "Connected" : "Not connected")
+                    .foregroundStyle(DS.ColorToken.textPrimary)
+                Text(platform.subtitle)
                     .font(DS.Typography.caption)
-                    .foregroundStyle(connected ? DS.ColorToken.success : DS.ColorToken.textSecondary)
+                    .foregroundStyle(DS.ColorToken.textSecondary)
             }
             Spacer()
-            DSButton(title: connected ? "Manage" : "Connect", kind: connected ? .tertiary : .secondary, action: action)
-                .frame(width: 120)
+            Button {
+                openPlatform(platform)
+            } label: {
+                HStack(spacing: DS.Spacing.x4) {
+                    Text("Launch")
+                        .font(DS.Typography.caption)
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 10, weight: .semibold))
+                }
+                .foregroundStyle(DS.ColorToken.primary)
+                .padding(.horizontal, DS.Spacing.x12)
+                .padding(.vertical, DS.Spacing.x8)
+                .background(DS.ColorToken.primarySoft)
+                .clipShape(RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous))
+            }
         }
         .dsCardStyle()
+    }
+
+    private func openPlatform(_ platform: Platform) {
+        if let schemeURL = URL(string: platform.urlScheme),
+           UIApplication.shared.canOpenURL(schemeURL) {
+            UIApplication.shared.open(schemeURL)
+        } else if let fallbackURL = URL(string: platform.fallbackURL) {
+            UIApplication.shared.open(fallbackURL)
+        }
     }
 }
 

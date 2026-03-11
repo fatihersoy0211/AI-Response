@@ -3,14 +3,16 @@ import UniformTypeIdentifiers
 
 struct ConversationView: View {
     let session: UserSession
+    let dependencies: AppDependencies
 
     var body: some View {
-        LiveMeetingView(session: session)
+        LiveMeetingView(session: session, dependencies: dependencies)
     }
 }
 
 struct LiveMeetingView: View {
     let session: UserSession
+    let dependencies: AppDependencies
     let autoStartListening: Bool
 
     @Environment(\.dismiss) private var dismiss
@@ -20,6 +22,7 @@ struct LiveMeetingView: View {
     @State private var elapsedSeconds = 0
     @State private var sessionStart = Date()
     @State private var bookmarkCount = 0
+    @State private var waveActive = false
     private let ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     private var allowedFileTypes: [UTType] {
@@ -29,10 +32,19 @@ struct LiveMeetingView: View {
         return types
     }
 
-    init(session: UserSession, autoStartListening: Bool = false) {
+    init(session: UserSession, dependencies: AppDependencies, autoStartListening: Bool = false) {
         self.session = session
+        self.dependencies = dependencies
         self.autoStartListening = autoStartListening
-        _viewModel = StateObject(wrappedValue: ConversationViewModel(session: session))
+        _viewModel = StateObject(
+            wrappedValue: ConversationViewModel(
+                session: session,
+                speechService: dependencies.speechServiceFactory(),
+                transcriptionService: dependencies.transcriptionService,
+                projectRepository: dependencies.projectRepository,
+                aiService: dependencies.aiService
+            )
+        )
     }
 
     var body: some View {
@@ -57,6 +69,13 @@ struct LiveMeetingView: View {
             if autoStartListening {
                 viewModel.listen()
                 sessionStart = Date()
+            }
+        }
+        .onChange(of: viewModel.mode) { _, newMode in
+            withAnimation(newMode == .listening
+                ? .easeInOut(duration: 0.5).repeatForever(autoreverses: true)
+                : .easeOut(duration: 0.3)) {
+                waveActive = newMode == .listening
             }
         }
         .onReceive(ticker) { _ in
@@ -115,11 +134,21 @@ struct LiveMeetingView: View {
                 Circle()
                     .fill(viewModel.mode == .listening ? DS.ColorToken.error : DS.ColorToken.warning)
                     .frame(width: 10, height: 10)
+                    .accessibilityIdentifier("listeningIndicator")
                 Text(viewModel.mode == .listening ? "Listening" : (viewModel.mode == .answering ? "Answering…" : "Ready"))
                     .font(DS.Typography.caption)
                     .foregroundStyle(DS.ColorToken.textSecondary)
                 Spacer()
                 DSBadge(text: "Secure", tone: DS.ColorToken.success)
+            }
+            Text(viewModel.transcriptionStatus)
+                .font(DS.Typography.caption)
+                .foregroundStyle(DS.ColorToken.textSecondary)
+                .accessibilityIdentifier("transcriptionStatusLabel")
+
+            if viewModel.didUpdateContext {
+                DSBadge(text: "Context Updated", tone: DS.ColorToken.success)
+                    .accessibilityIdentifier("contextUpdatedBadge")
             }
 
             if viewModel.projects.isEmpty {
@@ -183,6 +212,18 @@ struct LiveMeetingView: View {
                             Capsule()
                                 .fill(index % 3 == 0 ? DS.ColorToken.primary : DS.ColorToken.aiAccent)
                                 .frame(width: 3, height: CGFloat((index % 8) + 8))
+                                .scaleEffect(
+                                    y: waveActive ? (index % 2 == 0 ? 2.8 : 1.6) : 1.0,
+                                    anchor: .center
+                                )
+                                .animation(
+                                    waveActive
+                                        ? .easeInOut(duration: 0.35 + Double(index % 6) * 0.05)
+                                            .repeatForever(autoreverses: true)
+                                            .delay(Double(index) * 0.025)
+                                        : .easeOut(duration: 0.2),
+                                    value: waveActive
+                                )
                         }
                     }
                 }
@@ -285,6 +326,7 @@ struct LiveMeetingView: View {
                      : viewModel.answerText)
                     .font(DS.Typography.body)
                     .foregroundStyle(DS.ColorToken.textPrimary)
+                    .accessibilityIdentifier("aiResponseText")
             }
             if let error = viewModel.errorMessage {
                 Text(error)
@@ -307,6 +349,7 @@ struct LiveMeetingView: View {
             ) {
                 viewModel.listen()
             }
+            .accessibilityIdentifier("listenButton")
             DSButton(
                 title: viewModel.mode == .answering ? "Answering…" : "Respond",
                 icon: "sparkles",
@@ -316,11 +359,13 @@ struct LiveMeetingView: View {
             ) {
                 viewModel.respondAndListenAgain()
             }
+            .accessibilityIdentifier("responseButton")
             DSButton(title: "Stop", icon: "stop.fill", kind: .destructive) {
                 viewModel.stop()
                 sessionStart = Date()
                 elapsedSeconds = 0
             }
+            .accessibilityIdentifier("stopRecordingButton")
         }
     }
 
@@ -414,10 +459,12 @@ struct LiveMeetingView: View {
                                 RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous)
                                     .stroke(DS.ColorToken.border, lineWidth: 1)
                             )
+                            .accessibilityIdentifier("projectNameField")
                         DSButton(title: "Create", kind: .primary) {
                             viewModel.createProject()
                         }
                         .frame(width: 110)
+                        .accessibilityIdentifier("saveProjectButton")
                     }
 
                     // ── Analyze text ───────────────────────────────────

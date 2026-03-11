@@ -22,6 +22,8 @@ final class ConversationViewModel: ObservableObject {
     @Published var contextSummary: String = "Select or create a project"
     @Published var errorMessage: String?
     @Published var liveTranscript: String = ""
+    @Published var transcriptionStatus: String = "Ready to listen"
+    @Published var didUpdateContext = false
 
     /// All completed listen rounds in this session
     @Published var sessionLog: [TranscriptEntry] = []
@@ -39,33 +41,44 @@ final class ConversationViewModel: ObservableObject {
     @Published var uploadStatus: String? = nil
 
     private let session: UserSession
-    private let audioService: AudioCaptureService
-    private let contextService: UserContextService
-    private let aiService: AIBackendService
+    private let speechService: any SpeechListeningService
+    private let transcriptionService: any TranscriptionServicing
+    private let projectRepository: any ProjectRepository
+    private let aiService: any AIResponseServicing
     private var cancellables = Set<AnyCancellable>()
-    /// Reference to the running AI stream task so Stop can cancel it
     private var aiTask: Task<Void, Never>?
+    private var activeListenSessionStartCount = 0
 
-    /// Full accumulated transcript text from previous rounds in this session.
-    var sessionTranscript: String {
-        sessionLog.map { "[\($0.timestamp)] \($0.text)" }.joined(separator: "\n")
+    var personaDescription: String {
+        let trimmedName = session.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedName.isEmpty {
+            return "AI-Meeting Assist persona for the active project user"
+        }
+        return "AI-Meeting Assist persona derived from username \(trimmedName)"
+    }
+
+    var transcriptMemory: [String] {
+        sessionLog.map { "[\($0.timestamp)] \($0.text)" }
     }
 
     init(
         session: UserSession,
-        audioService: AudioCaptureService? = nil,
-        contextService: UserContextService = UserContextService(),
-        aiService: AIBackendService = AIBackendService()
+        speechService: (any SpeechListeningService)? = nil,
+        transcriptionService: (any TranscriptionServicing)? = nil,
+        projectRepository: any ProjectRepository = UserContextService(),
+        aiService: any AIResponseServicing = AIBackendService()
     ) {
         self.session = session
-        self.audioService = audioService ?? AudioCaptureService()
-        self.contextService = contextService
+        self.speechService = speechService ?? AudioCaptureService()
+        self.transcriptionService = transcriptionService ?? PassthroughTranscriptionService()
+        self.projectRepository = projectRepository
         self.aiService = aiService
 
-        self.audioService.$liveTranscript
+        self.speechService.liveTranscriptPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] text in
                 self?.liveTranscript = text
+                self?.transcriptionStatus = text.isEmpty ? "Listening active" : "Transcribing current session"
             }
             .store(in: &cancellables)
     }
@@ -74,9 +87,10 @@ final class ConversationViewModel: ObservableObject {
 
     func prepare() async {
         do {
-            let granted = await audioService.requestPermissions()
+            let granted = await speechService.requestPermissions()
             if !granted {
                 errorMessage = "Speech or microphone permission denied"
+                transcriptionStatus = "Microphone permission denied"
                 return
             }
             try await loadProjects()
@@ -86,7 +100,7 @@ final class ConversationViewModel: ObservableObject {
     }
 
     func loadProjects() async throws {
-        let loaded = try await contextService.listProjects(token: session.accessToken)
+        let loaded = try await projectRepository.listProjects(token: session.accessToken)
         projects = loaded
 
         if selectedProjectId.isEmpty, let first = loaded.first {
@@ -106,11 +120,12 @@ final class ConversationViewModel: ObservableObject {
 
         Task {
             do {
-                let created = try await contextService.createProject(name: name, token: session.accessToken)
+                let created = try await projectRepository.createProject(name: name, token: session.accessToken)
                 newProjectName = ""
                 projects.insert(created, at: 0)
                 selectedProjectId = created.projectId
                 try await refreshContext()
+                didUpdateContext = true
                 errorMessage = nil
             } catch {
                 errorMessage = error.localizedDescription
@@ -139,13 +154,14 @@ final class ConversationViewModel: ObservableObject {
         uploadStatus = "Analyzing text…"
         Task {
             do {
-                let source = try await contextService.uploadTextSource(
+                let source = try await projectRepository.uploadTextSource(
                     projectId: selectedProjectId, title: title, text: text, token: session.accessToken
                 )
                 sourceTitle = ""
                 userDataDraft = ""
                 projectSources.insert(source, at: 0)
                 try await refreshContext()
+                didUpdateContext = true
                 uploadStatus = "✓ Text saved"
                 errorMessage = nil
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
@@ -177,12 +193,13 @@ final class ConversationViewModel: ObservableObject {
                 default:     mimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 }
 
-                let source = try await contextService.uploadFileSource(
+                let source = try await projectRepository.uploadFileSource(
                     projectId: selectedProjectId, fileName: fileName,
                     mimeType: mimeType, fileData: fileData, token: session.accessToken
                 )
                 projectSources.insert(source, at: 0)
                 try await refreshContext()
+                didUpdateContext = true
                 uploadStatus = "✓ \(fileName) saved"
                 errorMessage = nil
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
@@ -200,7 +217,7 @@ final class ConversationViewModel: ObservableObject {
             projectSources = []
             return
         }
-        let context = try await contextService.fetchProjectContext(
+        let context = try await projectRepository.fetchProjectContext(
             projectId: selectedProjectId, token: session.accessToken
         )
         contextSummary = context.summary
@@ -211,8 +228,10 @@ final class ConversationViewModel: ObservableObject {
 
     func listen() {
         do {
-            try audioService.startListening()
+            try speechService.startListening()
+            activeListenSessionStartCount += 1
             mode = .listening
+            transcriptionStatus = "Listening active"
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
@@ -221,95 +240,109 @@ final class ConversationViewModel: ObservableObject {
 
     func respondAndListenAgain() {
         guard !selectedProjectId.isEmpty else { errorMessage = "Please select a project first"; return }
-
-        let capturedTranscript = liveTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        // 1. Commit this round to the session log (skip if empty — context-only response)
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm:ss"
-        if !capturedTranscript.isEmpty {
-            let entry = TranscriptEntry(timestamp: formatter.string(from: Date()), text: capturedTranscript)
-            sessionLog.append(entry)
-        }
-
-        // 2. Build accumulated context from all PREVIOUS rounds (not current)
-        let previousRounds = capturedTranscript.isEmpty ? sessionLog : sessionLog.dropLast()
-        let accumulatedContext: String? = previousRounds.isEmpty
-            ? nil
-            : previousRounds.map { "[\($0.timestamp)] \($0.text)" }.joined(separator: "\n")
-
-        // Cancel any in-progress AI task before starting a new one
+        let wasListening = mode == .listening
         aiTask?.cancel()
         aiTask = Task {
+            let latestTranscript = await finalizeCurrentTranscriptIfNeeded()
+            if wasListening {
+                speechService.stopListening()
+            }
+
+            let currentTranscript = latestTranscript ?? ""
+            let context = AIGenerationContext(
+                projectId: selectedProjectId,
+                projectName: projects.first(where: { $0.projectId == selectedProjectId })?.name ?? "Project",
+                projectContext: contextSummary,
+                currentTranscript: currentTranscript,
+                transcriptMemory: transcriptMemory,
+                userName: session.name,
+                persona: personaDescription
+            )
+
             mode = .answering
-            audioService.stopListening()
+            transcriptionStatus = "Generating response"
             answerText = ""
 
             do {
-                let stream = aiService.streamAnswer(
-                    projectId: selectedProjectId,
-                    transcript: capturedTranscript,
-                    sessionTranscript: accumulatedContext,
-                    userName: session.name,
-                    token: session.accessToken
-                )
+                let stream = aiService.streamAnswer(context: context, token: session.accessToken)
 
                 for try await chunk in stream {
                     if Task.isCancelled { break }
                     answerText += chunk
                 }
 
-                // 3. Auto-start next listen round — only if transcript was captured and not cancelled
-                if !Task.isCancelled && !capturedTranscript.isEmpty {
+                if !Task.isCancelled && wasListening {
                     try? await Task.sleep(nanoseconds: 300_000_000)
                     if !Task.isCancelled {
                         listen()
                     }
                 } else if !Task.isCancelled {
                     mode = .idle
+                    transcriptionStatus = "Response ready"
                 }
             } catch {
                 if !Task.isCancelled {
                     mode = .idle
                     errorMessage = error.localizedDescription
+                    transcriptionStatus = "Response failed"
                 }
             }
         }
     }
 
     func stop() {
-        // Cancel running AI stream immediately
         aiTask?.cancel()
         aiTask = nil
-
-        audioService.stopListening()
+        speechService.stopListening()
         mode = .idle
-
-        // Auto-save full session transcript to project knowledge base (background)
-        let fullTranscript = sessionTranscript
-
-        // Clear session so a new Listen starts fresh
-        sessionLog = []
-        liveTranscript = ""
-        guard !selectedProjectId.isEmpty, !fullTranscript.isEmpty else { return }
-
-        let formatter = DateFormatter()
-        formatter.dateFormat = "d MMM HH:mm"
-        let title = "Meeting Transcript – \(formatter.string(from: Date()))"
+        transcriptionStatus = "Listening stopped"
 
         Task {
-            do {
-                let source = try await contextService.saveTranscript(
-                    projectId: selectedProjectId,
-                    title: title,
-                    transcript: fullTranscript,
-                    token: session.accessToken
-                )
-                projectSources.insert(source, at: 0)
-                try await refreshContext()
-            } catch {
-                // Silent fail – session log is still visible in the UI
+            _ = await finalizeCurrentTranscriptIfNeeded()
+        }
+    }
+
+    private func makeTranscriptTitle() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "d MMM HH:mm"
+        return "Meeting Transcript – \(formatter.string(from: Date()))"
+    }
+
+    @discardableResult
+    private func finalizeCurrentTranscriptIfNeeded() async -> String? {
+        guard !selectedProjectId.isEmpty else { return nil }
+
+        do {
+            let transcript = try await transcriptionService.finalizeTranscript(from: liveTranscript)
+            guard !transcript.isEmpty else {
+                transcriptionStatus = "No transcript captured"
+                return nil
             }
+
+            if sessionLog.last?.text == transcript {
+                return transcript
+            }
+
+            let formatter = DateFormatter()
+            formatter.dateFormat = "HH:mm:ss"
+            let entry = TranscriptEntry(timestamp: formatter.string(from: Date()), text: transcript)
+            sessionLog.append(entry)
+
+            let source = try await projectRepository.saveTranscript(
+                projectId: selectedProjectId,
+                title: makeTranscriptTitle(),
+                transcript: transcript,
+                token: session.accessToken
+            )
+            projectSources.insert(source, at: 0)
+            try await refreshContext()
+            didUpdateContext = true
+            transcriptionStatus = "Transcript saved"
+            return transcript
+        } catch {
+            errorMessage = error.localizedDescription
+            transcriptionStatus = "Transcription failed"
+            return nil
         }
     }
 }

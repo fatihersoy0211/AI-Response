@@ -13,6 +13,7 @@ from openai import OpenAI
 
 from .extractors import extract_text_from_file
 from .schemas import (
+    AIChatRequest,
     AIRespondRequest,
     AppleAuthRequest,
     AuthResponse,
@@ -463,4 +464,65 @@ def ai_respond(payload: AIRespondRequest, user: UserRecord = Depends(get_current
             "Cache-Control": "no-cache",
             "X-Accel-Buffering": "no",   # disable nginx buffering
         },
+    )
+
+
+@app.post("/ai/chat")
+def ai_chat(payload: AIChatRequest, user: UserRecord = Depends(get_current_user)):
+    """
+    Multi-turn AI chat grounded strictly in the selected project's knowledge base.
+    Each call receives the full conversation history so the model stays context-aware.
+    """
+    try:
+        context_summary, _, _ = store.project_context(user.user_id, payload.projectId)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    client = get_openai_client()
+    model = _respond_model()
+
+    user_display = (payload.userName or "").strip() or "the user"
+    system_instructions = (
+        f"You are a personal AI meeting assistant dedicated to {user_display}. "
+        f"You know {user_display}'s project context thoroughly and act as their trusted advisor. "
+        "Answer ONLY from the project knowledge base provided. Never fabricate. "
+        "Be concise, clear, and actionable (max 5 sentences or 5 bullet points unless more depth is needed). "
+        "Respond in the same language as the user's latest message."
+    )
+
+    # Build user input: project context + conversation history + current question
+    ctx = context_summary[:_MAX_CONTEXT_CHARS]
+    history_lines = []
+    for msg in payload.messages[:-1]:   # all but the latest
+        prefix = user_display if msg.role == "user" else "Assistant"
+        history_lines.append(f"{prefix}: {msg.content}")
+
+    current_message = payload.messages[-1].content if payload.messages else ""
+
+    user_input = f"## Project Knowledge Base\n{ctx if ctx else '(No project data yet)'}"
+    if history_lines:
+        user_input += "\n\n## Conversation History\n" + "\n\n".join(history_lines)
+    user_input += f"\n\n## Current Message\n{current_message}"
+
+    def event_stream():
+        try:
+            with client.responses.stream(
+                model=model,
+                instructions=system_instructions,
+                input=user_input,
+                temperature=0.3,
+                max_output_tokens=800,
+            ) as stream:
+                for delta in stream.text_deltas:
+                    if delta:
+                        yield f"data: {json.dumps({'delta': delta}, ensure_ascii=False)}\n\n"
+            yield 'data: {"done": true}\n\n'
+        except Exception as exc:
+            yield f"data: {json.dumps({'error': str(exc)}, ensure_ascii=False)}\n\n"
+            yield 'data: {"done": true}\n\n'
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

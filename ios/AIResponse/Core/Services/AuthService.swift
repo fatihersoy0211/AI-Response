@@ -1,6 +1,6 @@
 import Foundation
 
-struct AuthService {
+struct AuthService: AuthServicing {
     private let api = APIClient()
 
     func login(email: String, password: String) async throws -> UserSession {
@@ -35,5 +35,32 @@ struct AuthService {
 
     func logout(token: String) async throws {
         _ = try await api.request(path: "/auth/logout", method: "POST", token: token)
+    }
+}
+
+struct MockAuthService: AuthServicing {
+    let session: UserSession?
+
+    func login(email: String, password: String) async throws -> UserSession {
+        try resolvedSession()
+    }
+
+    func register(name: String, email: String, password: String) async throws -> UserSession {
+        try resolvedSession()
+    }
+
+    func loginWithApple(credential: AppleCredential) async throws -> UserSession {
+        try resolvedSession()
+    }
+
+    func me(token: String) async throws {}
+
+    func logout(token: String) async throws {}
+
+    private func resolvedSession() throws -> UserSession {
+        guard let session else {
+            throw TestFailure.forced("Missing mock session")
+        }
+        return session
     }
 }

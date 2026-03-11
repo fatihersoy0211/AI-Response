@@ -1,1 +1,29 @@
-{"users": [], "sessions": {}, "projects": {}}
+{
+  "users": [
+    {
+      "user_id": "d45112ba-b4b8-43e6-9195-1a6c09df3265",
+      "name": "Fatih Ersoy",
+      "email": "fatih.ersoy@yahoo.com",
+      "password_hash": "5af1eebb4ada6b711668b9e88a156df0:55f4fd521a6a985b5f27baa8c38b736f6bfea513f6cbfddbe15d87cb8e6e9a54",
+      "apple_id": "",
+      "created_at": "2026-03-11T19:40:46.645027+00:00"
+    }
+  ],
+  "sessions": {
+    "t28ni2t1r5WkiezVFTwph6Y5pZ7zefBl91Y3Fu0KPzozAGp4dmzGqSwWiprjRNiY": {
+      "user_id": "d45112ba-b4b8-43e6-9195-1a6c09df3265",
+      "created_at": "2026-03-11T21:23:10.271340+00:00"
+    }
+  },
+  "projects": {
+    "d45112ba-b4b8-43e6-9195-1a6c09df3265": [
+      {
+        "project_id": "193c1881-456a-44dc-ae1d-fa53ba3fc49d",
+        "name": "Customer Meeting",
+        "created_at": "2026-03-11T19:41:28.200195+00:00",
+        "updated_at": "2026-03-11T19:41:28.200195+00:00",
+        "sources": []
+      }
+    ]
+  }
+}

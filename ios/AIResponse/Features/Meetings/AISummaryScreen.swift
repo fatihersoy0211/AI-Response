@@ -1,102 +1,256 @@
 import SwiftUI
 
-struct AISummaryScreen: View {
-    @State private var followup = ""
-    @State private var expandedRisks = true
-    @State private var showStylePicker = false
-    @State private var selectedStyle = "Executive"
-    @State private var isRegenerating = false
-    @State private var regenerateCount = 0
+// MARK: - ViewModel
 
-    private let styles = ["Executive", "Technical", "Casual", "Bullet Points"]
-
-    private var currentSummary: String {
-        switch (selectedStyle, regenerateCount % 2) {
-        case ("Executive", _):
-            return regenerateCount == 0
-                ? "Team aligned on timeline risk and approved phased rollout for enterprise customers."
-                : "Leadership consensus reached on phased enterprise deployment. Timeline risk acknowledged and mitigation plan approved."
-        case ("Technical", _):
-            return regenerateCount == 0
-                ? "Analytics pipeline capacity identified as critical bottleneck. Migration dependency creates 1-week pilot delay risk."
-                : "System capacity constraints in the data pipeline require prioritized sprint allocation before pilot launch."
-        case ("Casual", _):
-            return "We all agreed there's a risk with the timeline but decided to go ahead with the rollout in phases. The team's on board."
-        case ("Bullet Points", _):
-            return "• Phased rollout approved\n• Timeline risk acknowledged\n• CS enablement plan defined\n• Pricing narrative finalized"
-        default:
-            return "Team aligned on timeline risk and approved phased rollout for enterprise customers."
+@MainActor
+final class AISummaryViewModel: ObservableObject {
+    @Published var projects: [UserProject] = []
+    @Published var selectedProjectId: String = "" {
+        didSet {
+            guard oldValue != selectedProjectId else { return }
+            summaryText = ""
+            errorMessage = nil
+            Task { await loadContextAndGenerate() }
         }
+    }
+    @Published var summaryText: String = ""
+    @Published var isGenerating = false
+    @Published var errorMessage: String?
+    @Published var selectedStyle: String = "Executive"
+
+    private let session: UserSession
+    private let projectRepository: any ProjectRepository
+    private let aiService: any AIResponseServicing
+    private var streamTask: Task<Void, Never>?
+    private var contextByProject: [String: String] = [:]
+
+    let styles = ["Executive", "Technical", "Casual", "Bullet Points"]
+
+    init(session: UserSession, dependencies: AppDependencies) {
+        self.session = session
+        self.projectRepository = dependencies.projectRepository
+        self.aiService = dependencies.aiService
+    }
+
+    func prepare() async {
+        do {
+            projects = try await projectRepository.listProjects(token: session.accessToken)
+            if selectedProjectId.isEmpty, let first = projects.first {
+                selectedProjectId = first.projectId
+            } else if !selectedProjectId.isEmpty {
+                await loadContextAndGenerate()
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func loadContextAndGenerate() async {
+        guard !selectedProjectId.isEmpty else { return }
+        do {
+            if contextByProject[selectedProjectId] == nil {
+                let ctx = try await projectRepository.fetchProjectContext(
+                    projectId: selectedProjectId, token: session.accessToken
+                )
+                contextByProject[selectedProjectId] = ctx.summary
+            }
+            await generate()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func generate() async {
+        guard !selectedProjectId.isEmpty else { return }
+        streamTask?.cancel()
+        summaryText = ""
+        isGenerating = true
+        errorMessage = nil
+
+        let projectName = projects.first(where: { $0.projectId == selectedProjectId })?.name ?? "Project"
+        let context = contextByProject[selectedProjectId] ?? ""
+
+        let styleInstruction: String
+        switch selectedStyle {
+        case "Technical":
+            styleInstruction = "Use technical language. Focus on systems, dependencies, and technical decisions."
+        case "Casual":
+            styleInstruction = "Use a conversational, friendly tone. Keep it brief and human."
+        case "Bullet Points":
+            styleInstruction = "Respond entirely in bullet point format with short, scannable items."
+        default:
+            styleInstruction = "Use an executive tone. Be concise, strategic, and action-oriented."
+        }
+
+        let prompt = """
+        Generate a comprehensive meeting summary in \(selectedStyle) style.
+        \(styleInstruction)
+        
+        Include the following sections:
+        ## Executive Summary
+        ## Key Discussion Points
+        ## Action Items
+        ## Risks & Blockers
+        ## Follow-up Suggestions
+        
+        Base everything strictly on the project knowledge base. Do not invent information.
+        """
+
+        let genContext = AIGenerationContext(
+            projectId: selectedProjectId,
+            projectName: projectName,
+            projectContext: context,
+            currentTranscript: prompt,
+            transcriptMemory: [],
+            userName: session.name,
+            persona: "AI Meeting Summarizer for \(session.name)"
+        )
+
+        streamTask = Task {
+            do {
+                let stream = aiService.streamAnswer(context: genContext, token: session.accessToken)
+                for try await chunk in stream {
+                    if Task.isCancelled { break }
+                    summaryText += chunk
+                }
+            } catch {
+                if !Task.isCancelled {
+                    errorMessage = error.localizedDescription
+                }
+            }
+            isGenerating = false
+        }
+    }
+
+    func cancelGeneration() {
+        streamTask?.cancel()
+        streamTask = nil
+        isGenerating = false
+    }
+}
+
+// MARK: - View
+
+struct AISummaryScreen: View {
+    let session: UserSession
+    let dependencies: AppDependencies
+
+    @StateObject private var viewModel: AISummaryViewModel
+
+    init(session: UserSession, dependencies: AppDependencies) {
+        self.session = session
+        self.dependencies = dependencies
+        _viewModel = StateObject(wrappedValue: AISummaryViewModel(session: session, dependencies: dependencies))
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DS.Spacing.x12) {
-            block("Executive Summary", text: currentSummary)
-            block("Key Discussion Points", text: "1. Capacity limits in analytics pipeline\n2. CS enablement plan\n3. Pricing narrative for renewals")
+        ScrollView {
+            VStack(alignment: .leading, spacing: DS.Spacing.x16) {
 
-            VStack(alignment: .leading, spacing: DS.Spacing.x8) {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        expandedRisks.toggle()
+                // Project picker
+                if !viewModel.projects.isEmpty {
+                    VStack(alignment: .leading, spacing: DS.Spacing.x4) {
+                        Text("Project")
+                            .font(DS.Typography.micro)
+                            .foregroundStyle(DS.ColorToken.textTertiary)
+                        Picker("Project", selection: $viewModel.selectedProjectId) {
+                            ForEach(viewModel.projects) { project in
+                                Text(project.name).tag(project.projectId)
+                            }
+                        }
+                        .pickerStyle(.menu)
                     }
-                } label: {
-                    HStack {
-                        Text("Risks / Blockers")
-                            .font(DS.Typography.heading)
-                        Spacer()
-                        Image(systemName: expandedRisks ? "chevron.up" : "chevron.down")
+                    .dsCardStyle()
+                } else if !viewModel.isGenerating {
+                    DSEmptyState(
+                        icon: "folder.badge.plus",
+                        title: "No projects found",
+                        message: "Create a project in the AI Chat tab and add knowledge sources, then come back to generate a summary."
+                    )
+                }
+
+                // Style picker + controls
+                if !viewModel.selectedProjectId.isEmpty {
+                    HStack(spacing: DS.Spacing.x8) {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: DS.Spacing.x8) {
+                                ForEach(viewModel.styles, id: \.self) { style in
+                                    Button {
+                                        viewModel.selectedStyle = style
+                                        Task { await viewModel.generate() }
+                                    } label: {
+                                        DSBadge(
+                                            text: style,
+                                            tone: viewModel.selectedStyle == style ? DS.ColorToken.primary : DS.ColorToken.textSecondary
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        if viewModel.isGenerating {
+                            Button {
+                                viewModel.cancelGeneration()
+                            } label: {
+                                Image(systemName: "stop.circle.fill")
+                                    .foregroundStyle(DS.ColorToken.error)
+                            }
+                        } else {
+                            Button {
+                                Task { await viewModel.generate() }
+                            } label: {
+                                Image(systemName: "arrow.clockwise")
+                                    .foregroundStyle(DS.ColorToken.primary)
+                            }
+                        }
                     }
-                    .foregroundStyle(DS.ColorToken.textPrimary)
                 }
-                if expandedRisks {
-                    Text("Data migration dependency may delay the pilot by 1 week.")
-                        .font(DS.Typography.body)
-                        .foregroundStyle(DS.ColorToken.textSecondary)
-                }
-            }
-            .dsCardStyle()
 
-            block("Action Items", text: "- Elif: Share revised roadmap by Thu\n- Burak: Validate budget assumptions by Fri")
-            block("Follow-up Suggestions", text: "Ask AI to draft a stakeholder update email and a one-page execution memo.")
-
-            DSAIAssistantInputBar(text: $followup) {
-                followup = ""
-            }
-
-            HStack {
-                DSButton(title: isRegenerating ? "Regenerating…" : "Regenerate", kind: .secondary, isLoading: isRegenerating) {
-                    guard !isRegenerating else { return }
-                    isRegenerating = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-                        isRegenerating = false
-                        regenerateCount += 1
+                // Error
+                if let error = viewModel.errorMessage {
+                    HStack(spacing: DS.Spacing.x8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(DS.ColorToken.error)
+                        Text(error)
+                            .font(DS.Typography.caption)
+                            .foregroundStyle(DS.ColorToken.error)
                     }
+                    .dsCardStyle()
                 }
-                DSButton(title: "Style: \(selectedStyle)", kind: .secondary) {
-                    showStylePicker = true
-                }
-            }
-        }
-        .confirmationDialog("Summary Style", isPresented: $showStylePicker, titleVisibility: .visible) {
-            ForEach(styles, id: \.self) { style in
-                Button(style) {
-                    selectedStyle = style
-                    regenerateCount = 0
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        }
-    }
 
-    private func block(_ title: String, text: String) -> some View {
-        VStack(alignment: .leading, spacing: DS.Spacing.x8) {
-            Text(title)
-                .font(DS.Typography.heading)
-                .foregroundStyle(DS.ColorToken.textPrimary)
-            Text(text)
-                .font(DS.Typography.body)
-                .foregroundStyle(DS.ColorToken.textSecondary)
+                // Generating indicator
+                if viewModel.isGenerating && viewModel.summaryText.isEmpty {
+                    HStack(spacing: DS.Spacing.x8) {
+                        ProgressView()
+                        Text("Generating \(viewModel.selectedStyle.lowercased()) summary…")
+                            .font(DS.Typography.caption)
+                            .foregroundStyle(DS.ColorToken.textSecondary)
+                    }
+                    .dsCardStyle()
+                }
+
+                // Summary content
+                if !viewModel.summaryText.isEmpty {
+                    VStack(alignment: .leading, spacing: DS.Spacing.x8) {
+                        HStack {
+                            DSBadge(text: viewModel.selectedStyle, tone: DS.ColorToken.primary)
+                            if viewModel.isGenerating {
+                                ProgressView().scaleEffect(0.7)
+                            }
+                            Spacer()
+                        }
+                        Text(viewModel.summaryText)
+                            .font(DS.Typography.body)
+                            .foregroundStyle(DS.ColorToken.textPrimary)
+                            .textSelection(.enabled)
+                    }
+                    .dsCardStyle()
+                }
+            }
+            .padding(DS.Spacing.x16)
         }
-        .dsCardStyle()
+        .background(DS.ColorToken.canvas)
+        .task {
+            await viewModel.prepare()
+        }
     }
 }

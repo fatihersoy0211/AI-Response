@@ -45,3 +45,37 @@ enum KeychainService {
         SecItemDelete(query as CFDictionary)
     }
 }
+
+final class KeychainSessionStore: SessionStoring {
+    func saveSession(_ session: UserSession) {
+        KeychainService.saveSession(session)
+    }
+
+    func loadSession() -> UserSession? {
+        KeychainService.loadSession()
+    }
+
+    func deleteSession() {
+        KeychainService.deleteSession()
+    }
+}
+
+final class InMemorySessionStore: SessionStoring {
+    private var storedSession: UserSession?
+
+    init(initialSession: UserSession? = nil) {
+        storedSession = initialSession
+    }
+
+    func saveSession(_ session: UserSession) {
+        storedSession = session
+    }
+
+    func loadSession() -> UserSession? {
+        storedSession
+    }
+
+    func deleteSession() {
+        storedSession = nil
+    }
+}

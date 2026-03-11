@@ -3,6 +3,15 @@ import Combine
 import Speech
 
 @MainActor
+protocol SpeechListeningService: AnyObject {
+    var currentTranscript: String { get }
+    var liveTranscriptPublisher: AnyPublisher<String, Never> { get }
+    func requestPermissions() async -> Bool
+    func startListening() throws
+    func stopListening()
+}
+
+@MainActor
 final class AudioCaptureService: ObservableObject {
     @Published var liveTranscript: String = ""
 
@@ -107,6 +116,93 @@ final class AudioCaptureService: ObservableObject {
 
         // Deactivate session so other apps can resume audio
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
+}
+
+extension AudioCaptureService: SpeechListeningService {
+    var currentTranscript: String {
+        liveTranscript
+    }
+
+    var liveTranscriptPublisher: AnyPublisher<String, Never> {
+        $liveTranscript.eraseToAnyPublisher()
+    }
+}
+
+struct PassthroughTranscriptionService: TranscriptionServicing {
+    func finalizeTranscript(from rawTranscript: String) async throws -> String {
+        rawTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+@MainActor
+final class MockSpeechService: SpeechListeningService {
+    private let subject = CurrentValueSubject<String, Never>("")
+    private let permissionGranted: Bool
+    private let queuedTranscripts: [String]
+    private var currentIndex = 0
+    private(set) var startCallCount = 0
+
+    init(
+        permissionGranted: Bool = true,
+        queuedTranscripts: [String] = ["We discussed the product roadmap and onboarding flow."]
+    ) {
+        self.permissionGranted = permissionGranted
+        self.queuedTranscripts = queuedTranscripts.isEmpty ? [""] : queuedTranscripts
+    }
+
+    convenience init(launchConfiguration: AppLaunchConfiguration) {
+        self.init(
+            permissionGranted: launchConfiguration.microphonePermissionGranted,
+            queuedTranscripts: launchConfiguration.queuedTranscripts
+        )
+    }
+
+    var currentTranscript: String {
+        subject.value
+    }
+
+    var liveTranscriptPublisher: AnyPublisher<String, Never> {
+        subject.eraseToAnyPublisher()
+    }
+
+    func requestPermissions() async -> Bool {
+        permissionGranted
+    }
+
+    func startListening() throws {
+        startCallCount += 1
+        let transcript = queuedTranscripts[min(currentIndex, queuedTranscripts.count - 1)]
+        currentIndex += 1
+        subject.send(transcript)
+    }
+
+    func stopListening() {}
+
+    func setTranscript(_ transcript: String) {
+        subject.send(transcript)
+    }
+}
+
+struct MockTranscriptionService: TranscriptionServicing {
+    let transcriptOverride: String?
+    let failureMessage: String?
+
+    init(transcriptOverride: String? = nil, failureMessage: String? = nil) {
+        self.transcriptOverride = transcriptOverride
+        self.failureMessage = failureMessage
+    }
+
+    init(launchConfiguration: AppLaunchConfiguration) {
+        transcriptOverride = nil
+        failureMessage = launchConfiguration.transcriptionFailureMessage
+    }
+
+    func finalizeTranscript(from rawTranscript: String) async throws -> String {
+        if let failureMessage {
+            throw TestFailure.forced(failureMessage)
+        }
+        return (transcriptOverride ?? rawTranscript).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 

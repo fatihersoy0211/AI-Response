@@ -1,7 +1,5 @@
-import AuthenticationServices
 import Foundation
 
-// Apple Sign In types — shared between AppleSignInService, AuthService, AppViewModel
 struct AppleCredential {
     let userIdentifier: String
     let identityToken: String
@@ -56,6 +54,62 @@ struct AIQueryRequest: Codable {
     /// All previous transcript rounds accumulated in this session
     let sessionTranscript: String?
     let userName: String?
+}
+
+protocol AuthServicing {
+    func login(email: String, password: String) async throws -> UserSession
+    func register(name: String, email: String, password: String) async throws -> UserSession
+    func loginWithApple(credential: AppleCredential) async throws -> UserSession
+    func me(token: String) async throws
+    func logout(token: String) async throws
+}
+
+protocol SessionStoring {
+    func saveSession(_ session: UserSession)
+    func loadSession() -> UserSession?
+    func deleteSession()
+}
+
+protocol TranscriptionServicing {
+    func finalizeTranscript(from rawTranscript: String) async throws -> String
+}
+
+protocol AIResponseServicing {
+    func streamAnswer(context: AIGenerationContext, token: String) -> AsyncThrowingStream<String, Error>
+}
+
+protocol ProjectRepository {
+    func listProjects(token: String) async throws -> [UserProject]
+    func createProject(name: String, token: String) async throws -> UserProject
+    func uploadTextSource(projectId: String, title: String, text: String, token: String) async throws -> SourceItem
+    func uploadFileSource(projectId: String, fileName: String, mimeType: String, fileData: Data, token: String) async throws -> SourceItem
+    func saveTranscript(projectId: String, title: String, transcript: String, token: String) async throws -> SourceItem
+    func fetchProjectContext(projectId: String, token: String) async throws -> ProjectContextSummary
+}
+
+struct AIGenerationContext: Equatable {
+    let projectId: String
+    let projectName: String
+    let projectContext: String
+    let currentTranscript: String
+    let transcriptMemory: [String]
+    let userName: String?
+    let persona: String
+
+    var combinedTranscriptMemory: String {
+        transcriptMemory.joined(separator: "\n")
+    }
+}
+
+enum TestFailure: LocalizedError {
+    case forced(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .forced(let message):
+            return message
+        }
+    }
 }
 
 struct AuthResponse: Codable {

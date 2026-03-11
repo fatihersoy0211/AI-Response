@@ -7,13 +7,20 @@ final class AppViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var errorMessage: String?
 
-    private let authService: AuthService
+    private let authService: any AuthServicing
+    private let sessionStore: any SessionStoring
+    private let launchConfiguration: AppLaunchConfiguration
 
-    init(authService: AuthService = AuthService()) {
+    init(
+        authService: any AuthServicing = AuthService(),
+        sessionStore: any SessionStoring = KeychainSessionStore(),
+        launchConfiguration: AppLaunchConfiguration = .current
+    ) {
         self.authService = authService
-        // Restore saved session on launch, then verify it's still valid
-        session = KeychainService.loadSession()
-        if session != nil {
+        self.sessionStore = sessionStore
+        self.launchConfiguration = launchConfiguration
+        session = launchConfiguration.preloadedSession ?? sessionStore.loadSession()
+        if session != nil && !launchConfiguration.useMockServices {
             Task { await verifySession() }
         }
     }
@@ -24,7 +31,7 @@ final class AppViewModel: ObservableObject {
         do {
             _ = try await authService.me(token: token)
         } catch let error as APIError where error.isUnauthorized {
-            KeychainService.deleteSession()
+            sessionStore.deleteSession()
             session = nil
         } catch {
             // Network error or other — keep the session, try again later
@@ -39,7 +46,7 @@ final class AppViewModel: ObservableObject {
         defer { isLoading = false }
         do {
             let s = try await authService.login(email: email, password: password)
-            KeychainService.saveSession(s)
+            sessionStore.saveSession(s)
             session = s
         } catch {
             handle(error: error)
@@ -52,7 +59,7 @@ final class AppViewModel: ObservableObject {
         defer { isLoading = false }
         do {
             let s = try await authService.register(name: name, email: email, password: password)
-            KeychainService.saveSession(s)
+            sessionStore.saveSession(s)
             session = s
         } catch {
             handle(error: error)
@@ -84,7 +91,7 @@ final class AppViewModel: ObservableObject {
                     email: cred.email
                 )
                 let s = try await authService.loginWithApple(credential: credential)
-                KeychainService.saveSession(s)
+                sessionStore.saveSession(s)
                 session = s
 
             case .failure(let error):
@@ -106,7 +113,7 @@ final class AppViewModel: ObservableObject {
 
     private func handle(error: Error) {
         if let api = error as? APIError, api.isUnauthorized {
-            KeychainService.deleteSession()
+            sessionStore.deleteSession()
             session = nil
         } else {
             errorMessage = error.localizedDescription
@@ -117,7 +124,7 @@ final class AppViewModel: ObservableObject {
         if let s = session {
             Task { try? await authService.logout(token: s.accessToken) }
         }
-        KeychainService.deleteSession()
+        sessionStore.deleteSession()
         session = nil
     }
 }

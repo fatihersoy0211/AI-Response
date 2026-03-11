@@ -33,7 +33,7 @@ struct MeetingDetailsView: View {
                 case .transcript:
                     TranscriptScreen()
                 case .summary:
-                    AISummaryScreen()
+                    DSEmptyState(icon: "sparkles", title: "AI Summary", message: "Open AI Summary from the Dashboard to generate a project-aware summary.")
                 case .actions:
                     ActionItemsScreen(compact: true)
                 case .decisions:

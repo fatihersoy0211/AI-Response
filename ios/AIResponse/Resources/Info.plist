@@ -19,9 +19,11 @@
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Uygulama, sesinizi dinleyip metne çevirmek için mikrofona erişir.</string>
+	<string>AI Meeting Assist needs microphone access to listen and transcribe your meetings in real time.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Uygulama, konuşmayı algılayıp AI yanıtı üretmek için konuşma tanıma kullanır.</string>
+	<string>AI Meeting Assist uses speech recognition to convert your speech to text and generate AI responses.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>AI Meeting Assist accesses your calendar to show upcoming meetings so you can start recording with one tap.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -34,5 +36,12 @@
 	</dict>
 	<key>UILaunchScreen</key>
 	<dict/>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>zoommtg</string>
+		<string>zoomus</string>
+		<string>msteams</string>
+		<string>googlemeet</string>
+	</array>
 </dict>
 </plist>

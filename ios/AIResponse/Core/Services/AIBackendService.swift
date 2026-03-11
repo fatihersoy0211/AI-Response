@@ -6,8 +6,18 @@ private struct SSEEventPayload: Decodable {
     let error: String?
 }
 
-struct AIBackendService {
+struct AIBackendService: AIResponseServicing {
     private let api = APIClient()
+
+    func streamAnswer(context: AIGenerationContext, token: String) -> AsyncThrowingStream<String, Error> {
+        streamAnswer(
+            projectId: context.projectId,
+            transcript: context.currentTranscript,
+            sessionTranscript: context.combinedTranscriptMemory.isEmpty ? nil : context.combinedTranscriptMemory,
+            userName: context.userName,
+            token: token
+        )
+    }
 
     func streamAnswer(
         projectId: String,
@@ -96,5 +106,35 @@ struct AIBackendService {
             return arr.compactMap { $0["msg"] as? String }.joined(separator: "; ")
         }
         return nil
+    }
+}
+
+final class MockAIService: AIResponseServicing {
+    private let responseText: String
+    private let failureMessage: String?
+    private(set) var recordedContexts: [AIGenerationContext] = []
+
+    init(responseText: String, failureMessage: String? = nil) {
+        self.responseText = responseText
+        self.failureMessage = failureMessage
+    }
+
+    convenience init(launchConfiguration: AppLaunchConfiguration) {
+        self.init(
+            responseText: launchConfiguration.aiResponse,
+            failureMessage: launchConfiguration.aiFailureMessage
+        )
+    }
+
+    func streamAnswer(context: AIGenerationContext, token: String) -> AsyncThrowingStream<String, Error> {
+        recordedContexts.append(context)
+        return AsyncThrowingStream { continuation in
+            if let failureMessage {
+                continuation.finish(throwing: TestFailure.forced(failureMessage))
+                return
+            }
+            continuation.yield(responseText)
+            continuation.finish()
+        }
     }
 }
