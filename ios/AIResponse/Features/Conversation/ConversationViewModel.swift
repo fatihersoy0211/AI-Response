@@ -136,11 +136,12 @@ final class ConversationViewModel: ObservableObject {
         uploadStatus = "Metin analiz ediliyor…"
         Task {
             do {
-                try await contextService.uploadTextSource(
+                let source = try await contextService.uploadTextSource(
                     projectId: selectedProjectId, title: title, text: text, token: session.accessToken
                 )
                 sourceTitle = ""
                 userDataDraft = ""
+                projectSources.insert(source, at: 0)
                 try await refreshContext()
                 uploadStatus = "✓ Metin kaydedildi"
                 errorMessage = nil

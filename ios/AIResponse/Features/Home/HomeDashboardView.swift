@@ -132,9 +132,13 @@ struct UploadAudioSheet: View {
     @State private var uploadedFileName: String? = nil
     @State private var isUploading = false
 
-    private let allowedTypes: [UTType] = [.audio, .mp3,
+    private let allowedTypes: [UTType] = [
+        .audio,
+        UTType(filenameExtension: "mp3") ?? .audio,
         UTType(filenameExtension: "m4a") ?? .audio,
-        UTType(filenameExtension: "wav") ?? .audio]
+        UTType(filenameExtension: "wav") ?? .audio,
+        UTType(filenameExtension: "aac") ?? .audio
+    ]
 
     var body: some View {
         NavigationStack {

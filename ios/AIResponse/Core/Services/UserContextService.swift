@@ -15,10 +15,11 @@ struct UserContextService {
         return try JSONDecoder().decode(UserProject.self, from: data)
     }
 
-    func uploadTextSource(projectId: String, title: String, text: String, token: String) async throws {
+    func uploadTextSource(projectId: String, title: String, text: String, token: String) async throws -> SourceItem {
         let payload = ["title": title, "text": text]
         let body = try JSONSerialization.data(withJSONObject: payload)
-        _ = try await api.request(path: "/projects/\(projectId)/sources/text", method: "POST", token: token, body: body)
+        let data = try await api.request(path: "/projects/\(projectId)/sources/text", method: "POST", token: token, body: body)
+        return try JSONDecoder().decode(SourceItem.self, from: data)
     }
 
     /// Save a meeting transcript to the project knowledge base.
