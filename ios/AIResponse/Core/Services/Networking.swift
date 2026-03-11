@@ -2,17 +2,39 @@ import Foundation
 
 enum APIError: LocalizedError {
     case invalidResponse
-    case server(Int)
+    case server(Int, String?)   // code + optional server message
     case decoding
 
     var errorDescription: String? {
         switch self {
-        case .invalidResponse: return "Invalid response from server"
-        case .server(let code): return "Server error: \(code)"
-        case .decoding: return "Failed to decode server response"
+        case .invalidResponse:
+            return "Sunucudan geçersiz yanıt alındı"
+        case .server(let code, let message):
+            if let msg = message, !msg.isEmpty {
+                return msg
+            }
+            return "Sunucu hatası: \(code)"
+        case .decoding:
+            return "Sunucu yanıtı çözümlenemedi"
         }
     }
 }
+
+// Shared URLSession configured with sensible timeouts
+private let _session: URLSession = {
+    let cfg = URLSessionConfiguration.default
+    cfg.timeoutIntervalForRequest  = 30   // seconds to connect / send
+    cfg.timeoutIntervalForResource = 120  // seconds for the full response
+    return URLSession(configuration: cfg)
+}()
+
+// Streaming session — longer resource timeout for SSE
+private let _streamSession: URLSession = {
+    let cfg = URLSessionConfiguration.default
+    cfg.timeoutIntervalForRequest  = 30
+    cfg.timeoutIntervalForResource = 180
+    return URLSession(configuration: cfg)
+}()
 
 struct APIClient {
     var baseURL: URL = AppConfig.baseURL
@@ -33,11 +55,9 @@ struct APIClient {
         if let accept {
             request.setValue(accept, forHTTPHeaderField: "Accept")
         }
-
         if let token {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
-
         return request
     }
 
@@ -48,10 +68,14 @@ struct APIClient {
         body: Data? = nil,
         contentType: String = "application/json"
     ) async throws -> Data {
-        let request = makeRequest(path: path, method: method, token: token, body: body, contentType: contentType)
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let req = makeRequest(path: path, method: method, token: token, body: body, contentType: contentType)
+        let (data, response) = try await _session.data(for: req)
         guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
-        guard (200..<300).contains(http.statusCode) else { throw APIError.server(http.statusCode) }
+        guard (200..<300).contains(http.statusCode) else {
+            // Try to extract the "detail" field FastAPI returns
+            let serverMessage = parseDetail(from: data)
+            throw APIError.server(http.statusCode, serverMessage)
+        }
         return data
     }
 
@@ -70,4 +94,24 @@ struct APIClient {
         body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
         return body
     }
+
+    // FastAPI wraps errors as {"detail": "..."}
+    private func parseDetail(from data: Data) -> String? {
+        guard
+            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let detail = obj["detail"]
+        else { return nil }
+
+        if let str = detail as? String { return str }
+        // FastAPI validation errors: detail is an array
+        if let arr = detail as? [[String: Any]] {
+            return arr.compactMap { $0["msg"] as? String }.joined(separator: "; ")
+        }
+        return nil
+    }
+}
+
+// Expose stream session for AIBackendService
+extension APIClient {
+    var streamSession: URLSession { _streamSession }
 }

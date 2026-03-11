@@ -31,29 +31,47 @@ struct AIBackendService {
                         accept: "text/event-stream"
                     )
 
-                    let (bytes, response) = try await URLSession.shared.bytes(for: request)
-                    guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
-                    guard (200..<300).contains(http.statusCode) else { throw APIError.server(http.statusCode) }
+                    // Use the dedicated streaming session (longer timeout)
+                    let (bytes, response) = try await api.streamSession.bytes(for: request)
+
+                    guard let http = response as? HTTPURLResponse else {
+                        throw APIError.invalidResponse
+                    }
+
+                    // On non-200, collect the body and extract the error detail
+                    guard (200..<300).contains(http.statusCode) else {
+                        var errorData = Data()
+                        for try await byte in bytes { errorData.append(byte) }
+                        let detail = parseDetail(from: errorData)
+                        throw APIError.server(http.statusCode, detail)
+                    }
 
                     for try await line in bytes.lines {
+                        // SSE lines must start with "data:"
                         guard line.hasPrefix("data:") else { continue }
 
                         let raw = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
                         guard !raw.isEmpty else { continue }
 
+                        // Ignore the raw "[DONE]" marker some proxies insert
+                        if raw == "[DONE]" { break }
+
                         let rawData = Data(raw.utf8)
-                        if let payload = try? JSONDecoder().decode(SSEEventPayload.self, from: rawData) {
-                            if let error = payload.error {
-                                throw NSError(domain: "AIBackendService", code: 1, userInfo: [NSLocalizedDescriptionKey: error])
-                            }
-                            if payload.done == true {
-                                break
-                            }
-                            if let delta = payload.delta, !delta.isEmpty {
-                                continuation.yield(delta)
-                            }
-                        } else {
-                            continuation.yield(String(raw))
+                        guard let payload = try? JSONDecoder().decode(SSEEventPayload.self, from: rawData) else {
+                            // Cannot decode: skip silently — do NOT yield raw text
+                            continue
+                        }
+
+                        if let errorMessage = payload.error, !errorMessage.isEmpty {
+                            throw NSError(
+                                domain: "AIBackendService",
+                                code: 1,
+                                userInfo: [NSLocalizedDescriptionKey: errorMessage]
+                            )
+                        }
+                        if payload.done == true { break }
+                        if let delta = payload.delta, !delta.isEmpty {
+                            continuation.yield(delta)
                         }
                     }
 
@@ -63,5 +81,18 @@ struct AIBackendService {
                 }
             }
         }
+    }
+
+    // FastAPI wraps errors as {"detail": "..."}
+    private func parseDetail(from data: Data) -> String? {
+        guard
+            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let detail = obj["detail"]
+        else { return nil }
+        if let str = detail as? String { return str }
+        if let arr = detail as? [[String: Any]] {
+            return arr.compactMap { $0["msg"] as? String }.joined(separator: "; ")
+        }
+        return nil
     }
 }

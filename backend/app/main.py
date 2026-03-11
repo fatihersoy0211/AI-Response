@@ -27,7 +27,7 @@ from .store import JsonStore, UserRecord
 
 load_dotenv()
 
-app = FastAPI(title="AI Response API", version="0.3.0")
+app = FastAPI(title="AI Response API", version="0.4.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -39,6 +39,28 @@ app.add_middleware(
 
 store = JsonStore(Path(__file__).resolve().parent.parent / "data" / "store.json")
 
+# ---------------------------------------------------------------------------
+# Model config
+# OPENAI_MODEL        – used for source analysis + transcript indexing (cheap)
+# OPENAI_RESPOND_MODEL – used for live AI respond (can be more capable)
+# ---------------------------------------------------------------------------
+_DEFAULT_ANALYZE_MODEL = "gpt-4.1-mini"
+_DEFAULT_RESPOND_MODEL = "gpt-4.1-mini"
+
+# Maximum characters allowed per section of the AI prompt.
+# gpt-4.1-mini has a 1M token context window; these limits keep cost/latency low.
+_MAX_CONTEXT_CHARS = 12_000
+_MAX_SESSION_CHARS = 8_000
+_MAX_TRANSCRIPT_CHARS = 4_000
+
+
+def _analyze_model() -> str:
+    return os.getenv("OPENAI_MODEL", _DEFAULT_ANALYZE_MODEL).strip()
+
+
+def _respond_model() -> str:
+    return os.getenv("OPENAI_RESPOND_MODEL", os.getenv("OPENAI_MODEL", _DEFAULT_RESPOND_MODEL)).strip()
+
 
 def get_openai_client() -> OpenAI:
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
@@ -46,11 +68,12 @@ def get_openai_client() -> OpenAI:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=(
-                "OPENAI_API_KEY missing. ChatGPT uyeligi dogrudan API olarak kullanilamaz; "
-                "OpenAI API key gerekli."
+                "OPENAI_API_KEY eksik. ChatGPT üyeliği doğrudan API anahtarı değildir; "
+                "OpenAI API key gereklidir: https://platform.openai.com/api-keys"
             ),
         )
-    return OpenAI(api_key=api_key)
+    # 60-second timeout — prevents hanging when OpenAI is slow
+    return OpenAI(api_key=api_key, timeout=60.0)
 
 
 def get_current_user(authorization: str | None = Header(default=None)) -> UserRecord:
@@ -64,61 +87,104 @@ def get_current_user(authorization: str | None = Header(default=None)) -> UserRe
     return user
 
 
-def analyze_source_text(client: OpenAI, model: str, project_name: str, title: str, text: str) -> str:
-    prompt = (
-        "You are extracting actionable memory for a voice assistant. "
-        "Create a compact factual summary in Turkish. Include key entities, constraints, and instructions. "
-        "Do not invent information.\n\n"
-        f"Project: {project_name}\n"
-        f"Source title: {title}\n"
-        f"Source text:\n{text[:18000]}"
-    )
+# ---------------------------------------------------------------------------
+# AI helpers
+# ---------------------------------------------------------------------------
 
-    response = client.responses.create(
-        model=model,
-        input=prompt,
-        temperature=0.1,
-        max_output_tokens=450,
-    )
-    summary = (response.output_text or "").strip()
-    return summary if summary else "Kaynak analiz edildi, ancak ozet cikarilamadi."
-
-
-def build_ai_prompt(context_summary: str, session_transcript: str | None, current_transcript: str) -> str:
+def analyze_source_text(client: OpenAI, project_name: str, title: str, text: str) -> str:
     """
-    Build a focused, fast AI prompt that includes:
-    - Full project knowledge base (all source analyses)
-    - Accumulated session transcript (all previous rounds in this meeting)
-    - Current transcript (the latest thing the user said)
+    Extract a compact, actionable memory chunk from a source document.
+    Uses the Responses API with a separate instructions field (system role)
+    for clean prompt separation.
     """
-    parts = [
-        "Sen proje tabanli calistirilan bir sesli toplanti asistanisin.",
-        "Asagidaki bilgi tabanini ve toplanti baglaminı kullanarak anlik soruya kisa, dogru ve uygulanabilir bir yanit ver.",
-        "Bilgi tabani disinda bilgi uretme. Cevap 3-5 cumle olsun, madde ise maddeli ver.",
-        "",
-        "=== PROJE BİLGİ TABANI ===",
-        context_summary,
+    model = _analyze_model()
+
+    try:
+        response = client.responses.create(
+            model=model,
+            instructions=(
+                "Sen bir toplantı asistanının bellek motoru için bilgi çıkarıcısın. "
+                "Görevin: verilen kaynaktan kısa, madde madde, eyleme dönüştürülebilir bir Türkçe özet çıkarmak. "
+                "Yalnızca kaynakta geçen bilgileri kullan. Asla bilgi uydurma. "
+                "Format: madde işaretleri (•). Maksimum 400 kelime."
+            ),
+            input=(
+                f"Proje: {project_name}\n"
+                f"Kaynak başlığı: {title}\n\n"
+                f"Kaynak içeriği:\n{text[:18_000]}"
+            ),
+            temperature=0.1,
+            max_output_tokens=500,
+        )
+        summary = (response.output_text or "").strip()
+        return summary if summary else "Kaynak analiz edildi; özet üretilemedi."
+    except Exception as exc:
+        # Non-fatal — we store the source without analysis rather than blocking upload
+        return f"Analiz yapılamadı: {exc}"
+
+
+def index_transcript(client: OpenAI, transcript: str) -> str:
+    """
+    Lightweight indexing of a meeting transcript (cheap, fast).
+    Extracts key points, decisions and action items only.
+    """
+    model = _analyze_model()
+
+    try:
+        response = client.responses.create(
+            model=model,
+            instructions=(
+                "Toplantı transkriptinden yalnızca şunları çıkar: "
+                "anahtar noktalar, alınan kararlar, eylem maddeleri (kime, ne zaman). "
+                "Madde işaretleriyle (•) yaz. Maksimum 250 kelime. Türkçe."
+            ),
+            input=f"Transkript:\n{transcript[:12_000]}",
+            temperature=0.1,
+            max_output_tokens=350,
+        )
+        result = (response.output_text or "").strip()
+        return result if result else "Transkript kaydedildi."
+    except Exception:
+        return "Transkript kaydedildi (indeksleme yapılamadı)."
+
+
+def build_respond_input(
+    context_summary: str,
+    session_transcript: str | None,
+    current_transcript: str,
+) -> str:
+    """
+    Build the user-turn input for /ai/respond.
+    System instructions are passed separately via the `instructions` parameter.
+    Each section is clearly delimited and length-capped.
+    """
+    ctx = context_summary[:_MAX_CONTEXT_CHARS]
+    cur = current_transcript.strip()[:_MAX_TRANSCRIPT_CHARS]
+
+    parts: list[str] = [
+        "## Proje Bilgi Tabanı",
+        ctx if ctx else "(Bu proje için henüz kaynak yüklenmedi.)",
     ]
 
     if session_transcript and session_transcript.strip():
-        parts += [
-            "",
-            "=== BU TOPLANTININ ÖNCEKI KONUŞMA GEÇMİŞİ ===",
-            session_transcript.strip(),
-        ]
+        sess = session_transcript.strip()
+        # Keep only the most recent part if too long
+        if len(sess) > _MAX_SESSION_CHARS:
+            sess = "...(önceki konuşmalar kısaltıldı)\n" + sess[-_MAX_SESSION_CHARS:]
+        parts += ["", "## Bu Toplantının Önceki Konuşma Geçmişi", sess]
 
-    parts += [
-        "",
-        "=== ŞU ANKİ SORU / TRANSKRİPT ===",
-        current_transcript.strip(),
-    ]
+    parts += ["", "## Şu Anki Soru / Transkript", cur]
 
     return "\n".join(parts)
 
 
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
+
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok"}
+    return {"status": "ok", "version": app.version}
 
 
 @app.post("/auth/register", response_model=AuthResponse)
@@ -136,7 +202,7 @@ def register(payload: RegisterRequest) -> AuthResponse:
 def login(payload: LoginRequest) -> AuthResponse:
     user = store.authenticate_user(payload.email, payload.password)
     if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Geçersiz e-posta veya şifre")
 
     token = store.create_session(user.user_id)
     return AuthResponse(userId=user.user_id, accessToken=token, refreshToken=None)
@@ -144,7 +210,6 @@ def login(payload: LoginRequest) -> AuthResponse:
 
 @app.get("/projects", response_model=list[ProjectResponse])
 def list_projects(user: UserRecord = Depends(get_current_user)) -> list[ProjectResponse]:
-    projects = store.list_projects(user.user_id)
     return [
         ProjectResponse(
             projectId=p["project_id"],
@@ -152,7 +217,7 @@ def list_projects(user: UserRecord = Depends(get_current_user)) -> list[ProjectR
             createdAtISO8601=p["created_at"],
             updatedAtISO8601=p["updated_at"],
         )
-        for p in projects
+        for p in store.list_projects(user.user_id)
     ]
 
 
@@ -175,29 +240,19 @@ def upload_text_source(
 ) -> SourceResponse:
     project = store.get_project(user.user_id, project_id)
     if not project:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Proje bulunamadı")
 
     client = get_openai_client()
-    model = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
-
-    try:
-        analysis = analyze_source_text(client, model, project["name"], payload.title, payload.text)
-    except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Source analysis failed: {exc}") from exc
+    analysis = analyze_source_text(client, project["name"], payload.title, payload.text)
 
     source = store.add_project_source(
-        user.user_id,
-        project_id,
-        source_type="text",
-        title=payload.title,
-        raw_text=payload.text,
-        analysis=analysis,
+        user.user_id, project_id,
+        source_type="text", title=payload.title,
+        raw_text=payload.text, analysis=analysis,
     )
     return SourceResponse(
-        sourceId=source["source_id"],
-        sourceType=source["source_type"],
-        title=source["title"],
-        analysis=source["analysis"],
+        sourceId=source["source_id"], sourceType=source["source_type"],
+        title=source["title"], analysis=source["analysis"],
         createdAtISO8601=source["created_at"],
     )
 
@@ -208,49 +263,21 @@ def save_transcript_source(
     payload: TranscriptSaveRequest,
     user: UserRecord = Depends(get_current_user),
 ) -> SourceResponse:
-    """
-    Save a meeting transcript directly to the project knowledge base.
-    Uses a lightweight keyword extraction instead of a full AI analysis call
-    so it is fast and cheap.
-    """
     project = store.get_project(user.user_id, project_id)
     if not project:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Proje bulunamadı")
 
     client = get_openai_client()
-    model = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
-
-    # Lightweight transcript indexing prompt – much cheaper than full analysis
-    index_prompt = (
-        "Asagidaki toplanti transkriptinden madde madde key points, kararlar ve eylem maddeleri cikart. "
-        "Maksimum 200 kelime. Yalnizca transkriptte gecen bilgileri kullan.\n\n"
-        f"Transkript:\n{payload.transcript[:12000]}"
-    )
-
-    try:
-        resp = client.responses.create(
-            model=model,
-            input=index_prompt,
-            temperature=0.1,
-            max_output_tokens=300,
-        )
-        analysis = (resp.output_text or "").strip() or "Transkript kaydedildi."
-    except Exception:
-        analysis = "Transkript kaydedildi (analiz yapilamadi)."
+    analysis = index_transcript(client, payload.transcript)
 
     source = store.add_project_source(
-        user.user_id,
-        project_id,
-        source_type="transcript",
-        title=payload.title,
-        raw_text=payload.transcript,
-        analysis=analysis,
+        user.user_id, project_id,
+        source_type="transcript", title=payload.title,
+        raw_text=payload.transcript, analysis=analysis,
     )
     return SourceResponse(
-        sourceId=source["source_id"],
-        sourceType=source["source_type"],
-        title=source["title"],
-        analysis=source["analysis"],
+        sourceId=source["source_id"], sourceType=source["source_type"],
+        title=source["title"], analysis=source["analysis"],
         createdAtISO8601=source["created_at"],
     )
 
@@ -263,39 +290,33 @@ async def upload_file_source(
 ) -> SourceResponse:
     project = store.get_project(user.user_id, project_id)
     if not project:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Proje bulunamadı")
 
     filename = file.filename or "uploaded-file"
     data = await file.read()
+
     try:
         extracted = extract_text_from_file(filename, data)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
-    if not extracted:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Could not extract readable text from file")
+    if not extracted.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Dosyadan okunabilir metin çıkarılamadı",
+        )
 
     client = get_openai_client()
-    model = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
-
-    try:
-        analysis = analyze_source_text(client, model, project["name"], filename, extracted)
-    except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"File analysis failed: {exc}") from exc
+    analysis = analyze_source_text(client, project["name"], filename, extracted)
 
     source = store.add_project_source(
-        user.user_id,
-        project_id,
-        source_type="file",
-        title=filename,
-        raw_text=extracted,
-        analysis=analysis,
+        user.user_id, project_id,
+        source_type="file", title=filename,
+        raw_text=extracted, analysis=analysis,
     )
     return SourceResponse(
-        sourceId=source["source_id"],
-        sourceType=source["source_type"],
-        title=source["title"],
-        analysis=source["analysis"],
+        sourceId=source["source_id"], sourceType=source["source_type"],
+        title=source["title"], analysis=source["analysis"],
         createdAtISO8601=source["created_at"],
     )
 
@@ -311,10 +332,8 @@ def get_project_context(project_id: str, user: UserRecord = Depends(get_current_
         summary=summary,
         sources=[
             SourceResponse(
-                sourceId=s["source_id"],
-                sourceType=s["source_type"],
-                title=s["title"],
-                analysis=s["analysis"],
+                sourceId=s["source_id"], sourceType=s["source_type"],
+                title=s["title"], analysis=s["analysis"],
                 createdAtISO8601=s["created_at"],
             )
             for s in sources
@@ -331,31 +350,52 @@ def ai_respond(payload: AIRespondRequest, user: UserRecord = Depends(get_current
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
     client = get_openai_client()
-    model = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+    model = _respond_model()
 
-    prompt = build_ai_prompt(
+    user_input = build_respond_input(
         context_summary=context_summary,
         session_transcript=payload.sessionTranscript,
         current_transcript=payload.transcript,
     )
 
+    # System instructions — separated from user content for better model behavior
+    system_instructions = (
+        "Sen gerçek zamanlı bir toplantı asistanısın. "
+        "Kullanıcıya yalnızca proje bilgi tabanından ve bu toplantının bağlamından yararlanarak yanıt ver. "
+        "Kısa, net ve uygulanabilir cevaplar ver (maksimum 5 cümle veya 5 madde). "
+        "Eğer bilgi tabanında ilgili bilgi yoksa bunu açıkça söyle; bilgi uydurma. "
+        "Türkçe yanıt ver."
+    )
+
     def event_stream():
         try:
+            # Use text_deltas iterator — cleaner than raw event loop,
+            # automatically handles all delta event types.
             with client.responses.stream(
                 model=model,
-                input=prompt,
+                instructions=system_instructions,
+                input=user_input,
                 temperature=0.2,
-                max_output_tokens=500,
+                max_output_tokens=600,
             ) as stream:
-                for event in stream:
-                    if getattr(event, "type", None) == "response.output_text.delta":
-                        delta = getattr(event, "delta", "")
-                        if delta:
-                            yield f"data: {json.dumps({'delta': delta}, ensure_ascii=False)}\n\n"
+                for delta in stream.text_deltas:
+                    if delta:
+                        yield f"data: {json.dumps({'delta': delta}, ensure_ascii=False)}\n\n"
 
-                yield 'data: {"done": true}\n\n'
+            # Always send done — even if the loop body raised no items
+            yield 'data: {"done": true}\n\n'
+
         except Exception as exc:
-            err = {"error": f"Model request failed: {exc}"}
-            yield f"data: {json.dumps(err, ensure_ascii=False)}\n\n"
+            # Send error as a proper SSE event, then close with done
+            err_payload = {"error": str(exc)}
+            yield f"data: {json.dumps(err_payload, ensure_ascii=False)}\n\n"
+            yield 'data: {"done": true}\n\n'
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",   # disable nginx buffering
+        },
+    )
