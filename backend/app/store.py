@@ -18,6 +18,7 @@ class UserRecord:
     email: str
     password_hash: str
     created_at: str
+    apple_id: str = ""
 
 
 class JsonStore:
@@ -54,6 +55,17 @@ class JsonStore:
         candidate = JsonStore._hash_password(password, salt_hex)
         return secrets.compare_digest(candidate.split(":", 1)[1], expected_hex)
 
+    @staticmethod
+    def _to_record(user: dict[str, Any]) -> "UserRecord":
+        return UserRecord(
+            user_id=user["user_id"],
+            name=user["name"],
+            email=user["email"],
+            password_hash=user.get("password_hash", ""),
+            created_at=user["created_at"],
+            apple_id=user.get("apple_id", ""),
+        )
+
     def register_user(self, name: str, email: str, password: str) -> UserRecord:
         with self._lock:
             db = self._read()
@@ -66,21 +78,61 @@ class JsonStore:
                 "name": name.strip(),
                 "email": normalized,
                 "password_hash": self._hash_password(password),
+                "apple_id": "",
                 "created_at": self._now(),
             }
             db["users"].append(user)
             db["projects"][user["user_id"]] = []
             self._write(db)
-            return UserRecord(**user)
+            return self._to_record(user)
 
     def authenticate_user(self, email: str, password: str) -> UserRecord | None:
         with self._lock:
             db = self._read()
             normalized = email.strip().lower()
             for user in db["users"]:
-                if user["email"] == normalized and self._verify_password(password, user["password_hash"]):
-                    return UserRecord(**user)
+                ph = user.get("password_hash", "")
+                if user["email"] == normalized and ph and self._verify_password(password, ph):
+                    return self._to_record(user)
             return None
+
+    def find_or_create_apple_user(self, apple_id: str, email: str, name: str) -> UserRecord:
+        with self._lock:
+            db = self._read()
+            normalized_email = email.strip().lower() if email else ""
+
+            # 1. Look up by apple_id
+            for user in db["users"]:
+                if user.get("apple_id") == apple_id:
+                    # Update name/email if we got fresh data from Apple
+                    if name and user["name"] != name:
+                        user["name"] = name
+                    if normalized_email and user["email"] != normalized_email:
+                        user["email"] = normalized_email
+                    self._write(db)
+                    return self._to_record(user)
+
+            # 2. Link existing email account
+            if normalized_email:
+                for user in db["users"]:
+                    if user["email"] == normalized_email:
+                        user["apple_id"] = apple_id
+                        self._write(db)
+                        return self._to_record(user)
+
+            # 3. Create new Apple user
+            user = {
+                "user_id": str(uuid4()),
+                "name": name or "Apple User",
+                "email": normalized_email or f"apple_{apple_id[:8]}@privaterelay.appleid.com",
+                "password_hash": "",
+                "apple_id": apple_id,
+                "created_at": self._now(),
+            }
+            db["users"].append(user)
+            db["projects"][user["user_id"]] = []
+            self._write(db)
+            return self._to_record(user)
 
     def create_session(self, user_id: str) -> str:
         with self._lock:
@@ -90,6 +142,12 @@ class JsonStore:
             self._write(db)
             return token
 
+    def delete_session(self, token: str) -> None:
+        with self._lock:
+            db = self._read()
+            db["sessions"].pop(token, None)
+            self._write(db)
+
     def get_user_by_token(self, token: str) -> UserRecord | None:
         with self._lock:
             db = self._read()
@@ -98,7 +156,7 @@ class JsonStore:
                 return None
             for user in db["users"]:
                 if user["user_id"] == session["user_id"]:
-                    return UserRecord(**user)
+                    return self._to_record(user)
             return None
 
     def list_projects(self, user_id: str) -> list[dict[str, Any]]:

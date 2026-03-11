@@ -1,3 +1,4 @@
+import AuthenticationServices
 import SwiftUI
 
 struct LoginView: View {
@@ -17,6 +18,7 @@ struct LoginView: View {
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: DS.Spacing.x24) {
+                        // ── Header ────────────────────────────────────
                         VStack(alignment: .leading, spacing: DS.Spacing.x8) {
                             Text("AI-Meeting Assist")
                                 .font(DS.Typography.title1)
@@ -26,16 +28,40 @@ struct LoginView: View {
                                 .foregroundStyle(DS.ColorToken.textSecondary)
                         }
 
+                        // ── Apple Sign In (standard, unmodified) ──────
+                        SignInWithAppleButton(.signIn) { request in
+                            request.requestedScopes = [.fullName, .email]
+                        } onCompletion: { result in
+                            Task { await appViewModel.handleAppleSignIn(result: result) }
+                        }
+                        .signInWithAppleButtonStyle(.black)
+                        .frame(height: 54)
+                        // ⚠️ Do NOT apply clipShape/cornerRadius — it breaks tap events
+
+                        // ── Divider ───────────────────────────────────
+                        HStack {
+                            Rectangle()
+                                .fill(DS.ColorToken.border)
+                                .frame(height: 1)
+                            Text("or continue with email")
+                                .font(DS.Typography.micro)
+                                .foregroundStyle(DS.ColorToken.textTertiary)
+                                .fixedSize()
+                            Rectangle()
+                                .fill(DS.ColorToken.border)
+                                .frame(height: 1)
+                        }
+
+                        // ── Mode tabs ─────────────────────────────────
                         authSegment
 
+                        // ── Fields ────────────────────────────────────
                         VStack(spacing: DS.Spacing.x12) {
                             if mode == .signUp {
                                 DSInputField(title: "Full Name", text: $name)
                             }
-
                             DSInputField(title: "Work Email", text: $email, keyboard: .emailAddress)
                                 .textInputAutocapitalization(.never)
-
                             if mode != .magicLink {
                                 DSSecureInputField(title: "Password", text: $password)
                             }
@@ -49,12 +75,18 @@ struct LoginView: View {
                         )
                         .shadow(color: DS.Shadow.card.color, radius: DS.Shadow.card.radius, x: 0, y: 4)
 
+                        // ── Error ─────────────────────────────────────
                         if let error = appViewModel.errorMessage {
-                            Text(error)
-                                .font(DS.Typography.caption)
-                                .foregroundStyle(DS.ColorToken.error)
+                            HStack(spacing: DS.Spacing.x8) {
+                                Image(systemName: "exclamationmark.circle.fill")
+                                    .foregroundStyle(DS.ColorToken.error)
+                                Text(error)
+                                    .font(DS.Typography.caption)
+                                    .foregroundStyle(DS.ColorToken.error)
+                            }
                         }
 
+                        // ── Primary action ────────────────────────────
                         DSButton(
                             title: primaryTitle,
                             kind: .primary,
@@ -68,13 +100,9 @@ struct LoginView: View {
                                 case .signUp:
                                     await appViewModel.register(name: name, email: email, password: password)
                                 case .magicLink:
-                                    appViewModel.errorMessage = "Magic link backend akisi henuz tanimli degil."
+                                    appViewModel.errorMessage = "Magic link is not yet available."
                                 }
                             }
-                        }
-
-                        DSButton(title: "Continue with Apple", icon: "applelogo", kind: .secondary) {
-                            appViewModel.errorMessage = "Apple Sign In backend akisi henuz tanimli degil."
                         }
 
                         if mode != .magicLink {
@@ -104,18 +132,14 @@ struct LoginView: View {
     }
 
     private func authPill(_ authMode: AuthMode, title: String) -> some View {
-        Button(title) {
-            mode = authMode
-        }
-        .font(DS.Typography.caption)
-        .foregroundStyle(mode == authMode ? .white : DS.ColorToken.textSecondary)
-        .padding(.horizontal, DS.Spacing.x12)
-        .padding(.vertical, DS.Spacing.x8)
-        .background(mode == authMode ? DS.ColorToken.primary : DS.ColorToken.surface)
-        .clipShape(Capsule())
-        .overlay(
-            Capsule().stroke(DS.ColorToken.border, lineWidth: mode == authMode ? 0 : 1)
-        )
+        Button(title) { mode = authMode }
+            .font(DS.Typography.caption)
+            .foregroundStyle(mode == authMode ? .white : DS.ColorToken.textSecondary)
+            .padding(.horizontal, DS.Spacing.x12)
+            .padding(.vertical, DS.Spacing.x8)
+            .background(mode == authMode ? DS.ColorToken.primary : DS.ColorToken.surface)
+            .clipShape(Capsule())
+            .overlay(Capsule().stroke(DS.ColorToken.border, lineWidth: mode == authMode ? 0 : 1))
     }
 
     private var primaryTitle: String {
@@ -128,12 +152,9 @@ struct LoginView: View {
 
     private var isPrimaryDisabled: Bool {
         switch mode {
-        case .signIn:
-            return email.isEmpty || password.isEmpty
-        case .signUp:
-            return name.isEmpty || email.isEmpty || password.isEmpty
-        case .magicLink:
-            return email.isEmpty
+        case .signIn: return email.isEmpty || password.isEmpty
+        case .signUp: return name.isEmpty || email.isEmpty || password.isEmpty
+        case .magicLink: return email.isEmpty
         }
     }
 
@@ -147,7 +168,7 @@ struct LoginView: View {
                     .foregroundStyle(DS.ColorToken.textSecondary)
                 DSInputField(title: "Email", text: $forgotEmail, keyboard: .emailAddress)
                 DSButton(title: "Send Reset Link", kind: .primary) {
-                    appViewModel.errorMessage = "Password reset backend akisi henuz tanimli degil."
+                    appViewModel.errorMessage = "Password reset is not yet available."
                     showForgot = false
                 }
                 Spacer()

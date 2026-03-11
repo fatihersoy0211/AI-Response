@@ -14,8 +14,17 @@ class LoginRequest(BaseModel):
 
 class AuthResponse(BaseModel):
     userId: str
+    name: str
+    email: str
     accessToken: str
     refreshToken: str | None = None
+
+
+class UserProfileResponse(BaseModel):
+    userId: str
+    name: str
+    email: str
+    createdAtISO8601: str
 
 
 class ProjectCreateRequest(BaseModel):
@@ -51,6 +60,13 @@ class ProjectContextResponse(BaseModel):
     summary: str
     sources: list[SourceResponse]
     lastUpdatedISO8601: str
+
+
+class AppleAuthRequest(BaseModel):
+    identityToken: str          # JWT from Apple
+    userIdentifier: str         # Apple's stable user ID (sub)
+    name: str | None = None     # Only provided on first sign-in
+    email: str | None = None    # Only provided on first sign-in
 
 
 class AIRespondRequest(BaseModel):

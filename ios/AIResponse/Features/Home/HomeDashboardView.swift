@@ -6,7 +6,6 @@ struct HomeDashboardView: View {
     let openLiveMeeting: () -> Void
 
     @State private var searchText = ""
-    @State private var pendingDone = false
     @State private var showUploadAudio = false
     @State private var showJoinMeeting = false
     @State private var showAISummary = false
@@ -19,7 +18,7 @@ struct HomeDashboardView: View {
                         Text("Good morning")
                             .font(DS.Typography.caption)
                             .foregroundStyle(DS.ColorToken.textSecondary)
-                        Text("AI-Meeting Assist")
+                        Text(session.name)
                             .font(DS.Typography.title2)
                             .foregroundStyle(DS.ColorToken.textPrimary)
                     }
@@ -40,11 +39,6 @@ struct HomeDashboardView: View {
 
                 DSSearchBar(text: $searchText, placeholder: "Search meetings, transcripts, actions")
 
-                HStack(spacing: DS.Spacing.x12) {
-                    snapshotCard("Today", value: "3 meetings")
-                    snapshotCard("Pending", value: "5 actions")
-                }
-
                 DSSectionHeader(title: "Quick Actions")
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: DS.Spacing.x12) {
                     quickAction("Start Recording", icon: "mic.fill", action: openLiveMeeting)
@@ -53,23 +47,11 @@ struct HomeDashboardView: View {
                     quickAction("AI Summary", icon: "sparkles", action: { showAISummary = true })
                 }
 
-                DSSectionHeader(title: "AI Productivity Insight")
-                DSAIInsightCard(
-                    title: "Focus Insight",
-                    message: "Your last 4 meetings repeated roadmap blockers. Ask AI to draft a single alignment memo."
-                )
-
                 DSSectionHeader(title: "Recent Meetings")
-                DSMeetingCard(title: "Q2 Product Strategy", time: "09:30 - 10:15", source: "Zoom", participants: 6)
-                DSMeetingCard(title: "Client Renewal Sync", time: "11:00 - 11:40", source: "Teams", participants: 4)
-
-                DSSectionHeader(title: "Pending Action")
-                DSActionItemCard(
-                    title: "Send revised budget assumptions",
-                    owner: "You",
-                    dueDate: "Today 17:00",
-                    priority: "High",
-                    done: $pendingDone
+                DSEmptyState(
+                    icon: "calendar.badge.clock",
+                    title: "No meetings yet",
+                    message: "Start a recording or join a meeting to see it here."
                 )
             }
             .padding(DS.Spacing.x16)
@@ -86,19 +68,6 @@ struct HomeDashboardView: View {
             AISummaryScreen()
                 .navigationTitle("AI Summary")
         }
-    }
-
-    private func snapshotCard(_ title: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: DS.Spacing.x8) {
-            Text(title)
-                .font(DS.Typography.caption)
-                .foregroundStyle(DS.ColorToken.textSecondary)
-            Text(value)
-                .font(DS.Typography.heading)
-                .foregroundStyle(DS.ColorToken.textPrimary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .dsCardStyle()
     }
 
     private func quickAction(_ title: String, icon: String, action: @escaping () -> Void) -> some View {

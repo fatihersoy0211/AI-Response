@@ -3,10 +3,6 @@ import SwiftUI
 struct ActionItemsScreen: View {
     var compact = false
 
-    @State private var highDone = false
-    @State private var mediumDone = false
-    @State private var lowDone = false
-
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: DS.Spacing.x12) {
@@ -22,28 +18,10 @@ struct ActionItemsScreen: View {
                     }
                 }
 
-                DSActionItemCard(
-                    title: "Finalize enterprise rollout brief",
-                    owner: "Elif",
-                    dueDate: "Tomorrow",
-                    priority: "High",
-                    done: $highDone
-                )
-
-                DSActionItemCard(
-                    title: "Schedule legal review with procurement",
-                    owner: "Burak",
-                    dueDate: "Fri",
-                    priority: "Medium",
-                    done: $mediumDone
-                )
-
-                DSActionItemCard(
-                    title: "Share follow-up summary with leadership",
-                    owner: "Mina",
-                    dueDate: "Next Mon",
-                    priority: "Low",
-                    done: $lowDone
+                DSEmptyState(
+                    icon: "checkmark.circle",
+                    title: "No action items yet",
+                    message: "Action items extracted from meetings will appear here."
                 )
             }
             .padding(DS.Spacing.x16)

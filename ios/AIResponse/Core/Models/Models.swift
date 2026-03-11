@@ -1,7 +1,26 @@
+import AuthenticationServices
 import Foundation
+
+// Apple Sign In types — shared between AppleSignInService, AuthService, AppViewModel
+struct AppleCredential {
+    let userIdentifier: String
+    let identityToken: String
+    let name: String?
+    let email: String?
+}
+
+enum AppleSignInError: LocalizedError {
+    case invalidCredential
+
+    var errorDescription: String? {
+        "Apple kimlik bilgileri alınamadı"
+    }
+}
 
 struct UserSession: Codable {
     let userId: String
+    let name: String
+    let email: String
     let accessToken: String
     let refreshToken: String?
 }
@@ -40,10 +59,12 @@ struct AIQueryRequest: Codable {
 
 struct AuthResponse: Codable {
     let userId: String
+    let name: String
+    let email: String
     let accessToken: String
     let refreshToken: String?
 
     func toSession() -> UserSession {
-        UserSession(userId: userId, accessToken: accessToken, refreshToken: refreshToken)
+        UserSession(userId: userId, name: name, email: email, accessToken: accessToken, refreshToken: refreshToken)
     }
 }

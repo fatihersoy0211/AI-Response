@@ -2,19 +2,38 @@ import SwiftUI
 
 struct SettingsRootView: View {
     @EnvironmentObject private var appViewModel: AppViewModel
+    @State private var showLogoutConfirm = false
+
+    private var session: UserSession? { appViewModel.session }
 
     var body: some View {
         List {
+            // ── Tappable profile card ─────────────────────────────────
             Section {
-                VStack(alignment: .leading, spacing: DS.Spacing.x8) {
-                    Text("AI-Meeting Assist Pro")
-                        .font(DS.Typography.heading)
-                    Text("Workspace: Executive Ops")
-                        .font(DS.Typography.caption)
-                        .foregroundStyle(DS.ColorToken.textSecondary)
-                    DSProgressPill(title: "AI Credits", value: 0.64)
+                NavigationLink(destination: ProfileScreen()) {
+                    HStack(spacing: DS.Spacing.x16) {
+                        ZStack {
+                            Circle()
+                                .fill(DS.ColorToken.primary.opacity(0.18))
+                                .frame(width: 54, height: 54)
+                            Text(initials)
+                                .font(.system(size: 20, weight: .semibold))
+                                .foregroundStyle(DS.ColorToken.primary)
+                        }
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(session?.name ?? "—")
+                                .font(DS.Typography.heading)
+                                .foregroundStyle(DS.ColorToken.textPrimary)
+                            Text(session?.email ?? "—")
+                                .font(DS.Typography.caption)
+                                .foregroundStyle(DS.ColorToken.textSecondary)
+                            Text("View & edit profile →")
+                                .font(DS.Typography.micro)
+                                .foregroundStyle(DS.ColorToken.primary)
+                        }
+                    }
+                    .padding(.vertical, DS.Spacing.x8)
                 }
-                .padding(.vertical, DS.Spacing.x8)
             }
             .listRowBackground(DS.ColorToken.surface)
 
@@ -35,15 +54,198 @@ struct SettingsRootView: View {
                 NavigationLink("Empty & Error States") { StateGalleryScreen() }
             }
 
+            // ── Sign Out ──────────────────────────────────────────────
             Section {
-                Button("Sign Out", role: .destructive) {
-                    appViewModel.logout()
+                Button(role: .destructive) {
+                    showLogoutConfirm = true
+                } label: {
+                    HStack {
+                        Image(systemName: "rectangle.portrait.and.arrow.right")
+                        Text("Sign Out")
+                    }
                 }
+            } footer: {
+                Text("You are signed in as \(session?.email ?? "—")")
+                    .font(DS.Typography.micro)
             }
         }
         .scrollContentBackground(.hidden)
         .background(DS.ColorToken.canvas)
         .navigationTitle("Settings")
+        .confirmationDialog("Sign out?", isPresented: $showLogoutConfirm, titleVisibility: .visible) {
+            Button("Sign Out", role: .destructive) { appViewModel.logout() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("You will be signed out and need to log in again.")
+        }
+    }
+
+    private var initials: String {
+        guard let name = session?.name, !name.isEmpty else { return "?" }
+        let parts = name.split(separator: " ")
+        if parts.count >= 2 {
+            return "\(parts[0].prefix(1))\(parts[1].prefix(1))".uppercased()
+        }
+        return String(name.prefix(2)).uppercased()
+    }
+}
+
+// MARK: - Profile Screen
+
+struct ProfileScreen: View {
+    @EnvironmentObject private var appViewModel: AppViewModel
+    @AppStorage("user.phone") private var phone: String = ""
+    @AppStorage("user.bio") private var bio: String = ""
+    @AppStorage("user.company") private var company: String = ""
+    @State private var editPhone: String = ""
+    @State private var editBio: String = ""
+    @State private var editCompany: String = ""
+    @State private var showLogoutConfirm = false
+    @State private var saved = false
+
+    private var session: UserSession? { appViewModel.session }
+
+    var body: some View {
+        List {
+            // ── Avatar ────────────────────────────────────────────────
+            Section {
+                HStack {
+                    Spacer()
+                    VStack(spacing: DS.Spacing.x8) {
+                        ZStack {
+                            Circle()
+                                .fill(DS.ColorToken.primary.opacity(0.18))
+                                .frame(width: 80, height: 80)
+                            Text(initials)
+                                .font(.system(size: 30, weight: .semibold))
+                                .foregroundStyle(DS.ColorToken.primary)
+                        }
+                        Text(session?.name ?? "—")
+                            .font(DS.Typography.heading)
+                        DSBadge(text: "Free Plan", tone: DS.ColorToken.primary)
+                    }
+                    Spacer()
+                }
+                .padding(.vertical, DS.Spacing.x12)
+            }
+            .listRowBackground(DS.ColorToken.surface)
+
+            // ── Account Info (read-only) ───────────────────────────────
+            Section("Account") {
+                LabeledContent("Name", value: session?.name ?? "—")
+                LabeledContent("Email", value: session?.email ?? "—")
+                LabeledContent("Member since") {
+                    Text("2026")
+                        .foregroundStyle(DS.ColorToken.textSecondary)
+                }
+            }
+            .listRowBackground(DS.ColorToken.surface)
+
+            // ── Editable personal info ────────────────────────────────
+            Section("Personal Information") {
+                HStack {
+                    Label("Phone", systemImage: "phone")
+                        .frame(width: 120, alignment: .leading)
+                    TextField("+90 555 000 00 00", text: $editPhone)
+                        .keyboardType(.phonePad)
+                        .multilineTextAlignment(.trailing)
+                }
+                HStack {
+                    Label("Company", systemImage: "building.2")
+                        .frame(width: 120, alignment: .leading)
+                    TextField("Your company", text: $editCompany)
+                        .multilineTextAlignment(.trailing)
+                }
+            }
+            .listRowBackground(DS.ColorToken.surface)
+
+            Section("Bio") {
+                TextEditor(text: $editBio)
+                    .frame(minHeight: 80)
+            }
+            .listRowBackground(DS.ColorToken.surface)
+
+            // ── Save button ────────────────────────────────────────────
+            Section {
+                Button {
+                    phone = editPhone
+                    bio = editBio
+                    company = editCompany
+                    withAnimation { saved = true }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                        withAnimation { saved = false }
+                    }
+                } label: {
+                    HStack {
+                        Spacer()
+                        if saved {
+                            Label("Saved", systemImage: "checkmark.circle.fill")
+                                .foregroundStyle(DS.ColorToken.success)
+                        } else {
+                            Text("Save Changes")
+                                .font(DS.Typography.bodyMedium)
+                                .foregroundStyle(DS.ColorToken.primary)
+                        }
+                        Spacer()
+                    }
+                }
+            }
+            .listRowBackground(DS.ColorToken.surface)
+
+            // ── Membership ────────────────────────────────────────────
+            Section("Membership") {
+                HStack {
+                    VStack(alignment: .leading, spacing: DS.Spacing.x4) {
+                        Text("Free Plan")
+                            .font(DS.Typography.bodyMedium)
+                        Text("5 meetings/month · Basic transcription")
+                            .font(DS.Typography.caption)
+                            .foregroundStyle(DS.ColorToken.textSecondary)
+                    }
+                    Spacer()
+                    DSBadge(text: "Active", tone: DS.ColorToken.success)
+                }
+                NavigationLink("Upgrade to Pro") { SubscriptionScreen() }
+            }
+            .listRowBackground(DS.ColorToken.surface)
+
+            // ── Sign Out ──────────────────────────────────────────────
+            Section {
+                Button(role: .destructive) {
+                    showLogoutConfirm = true
+                } label: {
+                    HStack {
+                        Spacer()
+                        Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
+                        Spacer()
+                    }
+                }
+            }
+            .listRowBackground(DS.ColorToken.surface)
+        }
+        .scrollContentBackground(.hidden)
+        .background(DS.ColorToken.canvas)
+        .navigationTitle("My Profile")
+        .onAppear {
+            editPhone = phone
+            editBio = bio
+            editCompany = company
+        }
+        .confirmationDialog("Sign out?", isPresented: $showLogoutConfirm, titleVisibility: .visible) {
+            Button("Sign Out", role: .destructive) { appViewModel.logout() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("You will be signed out and need to log in again.")
+        }
+    }
+
+    private var initials: String {
+        guard let name = session?.name, !name.isEmpty else { return "?" }
+        let parts = name.split(separator: " ")
+        if parts.count >= 2 {
+            return "\(parts[0].prefix(1))\(parts[1].prefix(1))".uppercased()
+        }
+        return String(name.prefix(2)).uppercased()
     }
 }
 
@@ -51,10 +253,10 @@ struct SettingsRootView: View {
 
 struct IntegrationsScreen: View {
     @State private var connections: [String: Bool] = [
-        "Zoom": true,
-        "Google Meet": true,
+        "Zoom": false,
+        "Google Meet": false,
         "Microsoft Teams": false,
-        "Google Calendar": true,
+        "Google Calendar": false,
         "Slack": false,
         "Notion": false,
         "CRM": false
@@ -97,7 +299,7 @@ struct IntegrationsScreen: View {
 // MARK: - Subscription
 
 struct SubscriptionScreen: View {
-    @State private var selectedPlan = "Pro"
+    @State private var selectedPlan = "Free"
     @State private var showUpgradeAlert = false
 
     var body: some View {
@@ -189,7 +391,7 @@ struct RecordingPreferencesScreen: View {
                 HStack {
                     Text("Local storage used")
                     Spacer()
-                    Text("1.2 GB")
+                    Text("—")
                         .foregroundStyle(DS.ColorToken.textSecondary)
                 }
             }
@@ -376,23 +578,11 @@ struct DataExportScreen: View {
                     message: "Download all your meetings, transcripts, summaries, and action items as a ZIP archive."
                 )
 
-                VStack(alignment: .leading, spacing: DS.Spacing.x12) {
-                    exportRow(icon: "calendar", title: "Meetings", detail: "12 meetings")
-                    exportRow(icon: "text.quote", title: "Transcripts", detail: "9 transcripts")
-                    exportRow(icon: "sparkles", title: "AI Summaries", detail: "9 summaries")
-                    exportRow(icon: "checkmark.circle", title: "Action Items", detail: "34 items")
-                }
-
-                if exported {
-                    HStack(spacing: DS.Spacing.x12) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(DS.ColorToken.success)
-                        Text("Export ready for download")
-                            .font(DS.Typography.bodyMedium)
-                            .foregroundStyle(DS.ColorToken.success)
-                    }
-                    .dsCardStyle()
-                }
+                DSEmptyState(
+                    icon: "tray.and.arrow.down",
+                    title: "No data to export yet",
+                    message: "Complete a few meetings to generate exportable data."
+                )
 
                 DSButton(
                     title: exported ? "Download ZIP" : "Generate Export",
@@ -413,23 +603,6 @@ struct DataExportScreen: View {
         }
         .background(DS.ColorToken.canvas)
         .navigationTitle("Export Data")
-    }
-
-    private func exportRow(icon: String, title: String, detail: String) -> some View {
-        HStack(spacing: DS.Spacing.x12) {
-            Image(systemName: icon)
-                .font(.system(size: 18))
-                .foregroundStyle(DS.ColorToken.primary)
-                .frame(width: 32)
-            Text(title)
-                .font(DS.Typography.bodyMedium)
-                .foregroundStyle(DS.ColorToken.textPrimary)
-            Spacer()
-            Text(detail)
-                .font(DS.Typography.caption)
-                .foregroundStyle(DS.ColorToken.textSecondary)
-        }
-        .dsCardStyle()
     }
 }
 

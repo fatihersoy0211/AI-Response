@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import os
 from pathlib import Path
@@ -13,6 +14,7 @@ from openai import OpenAI
 from .extractors import extract_text_from_file
 from .schemas import (
     AIRespondRequest,
+    AppleAuthRequest,
     AuthResponse,
     LoginRequest,
     ProjectContextResponse,
@@ -22,6 +24,7 @@ from .schemas import (
     SourceResponse,
     TextSourceUploadRequest,
     TranscriptSaveRequest,
+    UserProfileResponse,
 )
 from .store import JsonStore, UserRecord
 
@@ -68,8 +71,8 @@ def get_openai_client() -> OpenAI:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=(
-                "OPENAI_API_KEY eksik. ChatGPT üyeliği doğrudan API anahtarı değildir; "
-                "OpenAI API key gereklidir: https://platform.openai.com/api-keys"
+                "OPENAI_API_KEY is missing. A ChatGPT subscription is not an API key; "
+                "Get your API key at: https://platform.openai.com/api-keys"
             ),
         )
     # 60-second timeout — prevents hanging when OpenAI is slow
@@ -103,24 +106,24 @@ def analyze_source_text(client: OpenAI, project_name: str, title: str, text: str
         response = client.responses.create(
             model=model,
             instructions=(
-                "Sen bir toplantı asistanının bellek motoru için bilgi çıkarıcısın. "
-                "Görevin: verilen kaynaktan kısa, madde madde, eyleme dönüştürülebilir bir Türkçe özet çıkarmak. "
-                "Yalnızca kaynakta geçen bilgileri kullan. Asla bilgi uydurma. "
-                "Format: madde işaretleri (•). Maksimum 400 kelime."
+                "You are a knowledge extractor for a meeting assistant memory engine. "
+                "Your task: extract a short, bullet-point, actionable summary from the given source. "
+                "Only use information present in the source. Never fabricate. "
+                "Format: bullet points (•). Max 400 words. Match the language of the source text."
             ),
             input=(
-                f"Proje: {project_name}\n"
-                f"Kaynak başlığı: {title}\n\n"
-                f"Kaynak içeriği:\n{text[:18_000]}"
+                f"Project: {project_name}\n"
+                f"Source title: {title}\n\n"
+                f"Source content:\n{text[:18_000]}"
             ),
             temperature=0.1,
             max_output_tokens=500,
         )
         summary = (response.output_text or "").strip()
-        return summary if summary else "Kaynak analiz edildi; özet üretilemedi."
+        return summary if summary else "Source analyzed; no summary could be generated."
     except Exception as exc:
         # Non-fatal — we store the source without analysis rather than blocking upload
-        return f"Analiz yapılamadı: {exc}"
+        return f"Analysis failed: {exc}"
 
 
 def index_transcript(client: OpenAI, transcript: str) -> str:
@@ -134,18 +137,18 @@ def index_transcript(client: OpenAI, transcript: str) -> str:
         response = client.responses.create(
             model=model,
             instructions=(
-                "Toplantı transkriptinden yalnızca şunları çıkar: "
-                "anahtar noktalar, alınan kararlar, eylem maddeleri (kime, ne zaman). "
-                "Madde işaretleriyle (•) yaz. Maksimum 250 kelime. Türkçe."
+                "Extract only the following from the meeting transcript: "
+                "key points, decisions made, action items (who, when). "
+                "Write with bullet points (•). Max 250 words. Match the language of the transcript."
             ),
-            input=f"Transkript:\n{transcript[:12_000]}",
+            input=f"Transcript:\n{transcript[:12_000]}",
             temperature=0.1,
             max_output_tokens=350,
         )
         result = (response.output_text or "").strip()
-        return result if result else "Transkript kaydedildi."
+        return result if result else "Transcript saved."
     except Exception:
-        return "Transkript kaydedildi (indeksleme yapılamadı)."
+        return "Transcript saved (indexing failed)."
 
 
 def build_respond_input(
@@ -162,18 +165,18 @@ def build_respond_input(
     cur = current_transcript.strip()[:_MAX_TRANSCRIPT_CHARS]
 
     parts: list[str] = [
-        "## Proje Bilgi Tabanı",
-        ctx if ctx else "(Bu proje için henüz kaynak yüklenmedi.)",
+        "## Project Knowledge Base",
+        ctx if ctx else "(No sources uploaded for this project yet.)",
     ]
 
     if session_transcript and session_transcript.strip():
         sess = session_transcript.strip()
         # Keep only the most recent part if too long
         if len(sess) > _MAX_SESSION_CHARS:
-            sess = "...(önceki konuşmalar kısaltıldı)\n" + sess[-_MAX_SESSION_CHARS:]
-        parts += ["", "## Bu Toplantının Önceki Konuşma Geçmişi", sess]
+            sess = "...(earlier conversation truncated)\n" + sess[-_MAX_SESSION_CHARS:]
+        parts += ["", "## Previous Conversation History This Meeting", sess]
 
-    parts += ["", "## Şu Anki Soru / Transkript", cur]
+    parts += ["", "## Current Question / Transcript", cur]
 
     return "\n".join(parts)
 
@@ -195,17 +198,76 @@ def register(payload: RegisterRequest) -> AuthResponse:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
     token = store.create_session(user.user_id)
-    return AuthResponse(userId=user.user_id, accessToken=token, refreshToken=None)
+    return AuthResponse(userId=user.user_id, name=user.name, email=user.email, accessToken=token, refreshToken=None)
 
 
 @app.post("/auth/login", response_model=AuthResponse)
 def login(payload: LoginRequest) -> AuthResponse:
     user = store.authenticate_user(payload.email, payload.password)
     if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Geçersiz e-posta veya şifre")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
 
     token = store.create_session(user.user_id)
-    return AuthResponse(userId=user.user_id, accessToken=token, refreshToken=None)
+    return AuthResponse(userId=user.user_id, name=user.name, email=user.email, accessToken=token, refreshToken=None)
+
+
+@app.get("/auth/me", response_model=UserProfileResponse)
+def get_me(user: UserRecord = Depends(get_current_user)) -> UserProfileResponse:
+    return UserProfileResponse(
+        userId=user.user_id,
+        name=user.name,
+        email=user.email,
+        createdAtISO8601=user.created_at,
+    )
+
+
+@app.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout(user: UserRecord = Depends(get_current_user), authorization: str | None = Header(default=None)):
+    if authorization:
+        token = authorization.removeprefix("Bearer ").strip()
+        store.delete_session(token)
+
+
+@app.post("/auth/apple", response_model=AuthResponse)
+def apple_sign_in(payload: AppleAuthRequest) -> AuthResponse:
+    """
+    Apple Sign In endpoint.
+    Decodes the identity token JWT to verify the sub claim matches userIdentifier,
+    then creates or retrieves the user account.
+    """
+    # Decode the JWT payload (middle section) without signature verification.
+    # In production, verify with Apple's JWKS at https://appleid.apple.com/auth/keys.
+    try:
+        parts = payload.identityToken.split(".")
+        if len(parts) != 3:
+            raise ValueError("Invalid JWT format")
+        # Add padding for base64 decoding
+        padded = parts[1] + "=" * (-len(parts[1]) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Identity token could not be decoded: {exc}",
+        ) from exc
+
+    jwt_sub = claims.get("sub", "")
+    if jwt_sub != payload.userIdentifier:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Identity token could not be verified",
+        )
+
+    # Prefer email from JWT claims (more reliable than client-sent email)
+    email = claims.get("email") or payload.email or ""
+    name = (payload.name or "").strip() or (email.split("@")[0] if email else "Apple User")
+
+    user = store.find_or_create_apple_user(
+        apple_id=payload.userIdentifier,
+        email=email,
+        name=name,
+    )
+    token = store.create_session(user.user_id)
+    return AuthResponse(userId=user.user_id, name=user.name, email=user.email, accessToken=token, refreshToken=None)
 
 
 @app.get("/projects", response_model=list[ProjectResponse])
@@ -240,7 +302,7 @@ def upload_text_source(
 ) -> SourceResponse:
     project = store.get_project(user.user_id, project_id)
     if not project:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Proje bulunamadı")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
 
     client = get_openai_client()
     analysis = analyze_source_text(client, project["name"], payload.title, payload.text)
@@ -265,7 +327,7 @@ def save_transcript_source(
 ) -> SourceResponse:
     project = store.get_project(user.user_id, project_id)
     if not project:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Proje bulunamadı")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
 
     client = get_openai_client()
     analysis = index_transcript(client, payload.transcript)
@@ -290,7 +352,7 @@ async def upload_file_source(
 ) -> SourceResponse:
     project = store.get_project(user.user_id, project_id)
     if not project:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Proje bulunamadı")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
 
     filename = file.filename or "uploaded-file"
     data = await file.read()
@@ -303,7 +365,7 @@ async def upload_file_source(
     if not extracted.strip():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Dosyadan okunabilir metin çıkarılamadı",
+            detail="Could not extract readable text from file",
         )
 
     client = get_openai_client()
@@ -360,11 +422,11 @@ def ai_respond(payload: AIRespondRequest, user: UserRecord = Depends(get_current
 
     # System instructions — separated from user content for better model behavior
     system_instructions = (
-        "Sen gerçek zamanlı bir toplantı asistanısın. "
-        "Kullanıcıya yalnızca proje bilgi tabanından ve bu toplantının bağlamından yararlanarak yanıt ver. "
-        "Kısa, net ve uygulanabilir cevaplar ver (maksimum 5 cümle veya 5 madde). "
-        "Eğer bilgi tabanında ilgili bilgi yoksa bunu açıkça söyle; bilgi uydurma. "
-        "Türkçe yanıt ver."
+        "You are a real-time meeting assistant. "
+        "Answer using only the project knowledge base and the context of this meeting. "
+        "Give short, clear, actionable answers (max 5 sentences or 5 bullet points). "
+        "If the knowledge base has no relevant information, say so clearly; never fabricate. "
+        "Respond in the same language as the transcript."
     )
 
     def event_stream():

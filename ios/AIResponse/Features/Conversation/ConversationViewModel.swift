@@ -19,7 +19,7 @@ struct TranscriptEntry: Identifiable {
 final class ConversationViewModel: ObservableObject {
     @Published var mode: ConversationMode = .idle
     @Published var answerText: String = ""
-    @Published var contextSummary: String = "Bir proje seçin veya oluşturun"
+    @Published var contextSummary: String = "Select or create a project"
     @Published var errorMessage: String?
     @Published var liveTranscript: String = ""
 
@@ -43,6 +43,8 @@ final class ConversationViewModel: ObservableObject {
     private let contextService: UserContextService
     private let aiService: AIBackendService
     private var cancellables = Set<AnyCancellable>()
+    /// Reference to the running AI stream task so Stop can cancel it
+    private var aiTask: Task<Void, Never>?
 
     /// Full accumulated transcript text from previous rounds in this session.
     var sessionTranscript: String {
@@ -117,6 +119,7 @@ final class ConversationViewModel: ObservableObject {
     }
 
     func selectProject(_ projectId: String) {
+        guard projectId != selectedProjectId else { return }
         selectedProjectId = projectId
         sessionLog = []
         Task {
@@ -128,12 +131,12 @@ final class ConversationViewModel: ObservableObject {
     // MARK: - Knowledge Upload
 
     func uploadUserData() {
-        guard !selectedProjectId.isEmpty else { errorMessage = "Önce proje seçin"; return }
+        guard !selectedProjectId.isEmpty else { errorMessage = "Please select a project first"; return }
         let title = sourceTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         let text = userDataDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty, !text.isEmpty else { return }
 
-        uploadStatus = "Metin analiz ediliyor…"
+        uploadStatus = "Analyzing text…"
         Task {
             do {
                 let source = try await contextService.uploadTextSource(
@@ -143,7 +146,7 @@ final class ConversationViewModel: ObservableObject {
                 userDataDraft = ""
                 projectSources.insert(source, at: 0)
                 try await refreshContext()
-                uploadStatus = "✓ Metin kaydedildi"
+                uploadStatus = "✓ Text saved"
                 errorMessage = nil
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
                 uploadStatus = nil
@@ -155,9 +158,9 @@ final class ConversationViewModel: ObservableObject {
     }
 
     func uploadPickedFile(url: URL) {
-        guard !selectedProjectId.isEmpty else { errorMessage = "Önce proje seçin"; return }
+        guard !selectedProjectId.isEmpty else { errorMessage = "Please select a project first"; return }
 
-        uploadStatus = "Dosya yükleniyor ve analiz ediliyor…"
+        uploadStatus = "Uploading and analyzing file…"
         Task {
             do {
                 let access = url.startAccessingSecurityScopedResource()
@@ -166,9 +169,13 @@ final class ConversationViewModel: ObservableObject {
                 let fileData = try Data(contentsOf: url)
                 let fileName = url.lastPathComponent
                 let ext = url.pathExtension.lowercased()
-                let mimeType = ext == "pdf"
-                    ? "application/pdf"
-                    : "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                let mimeType: String
+                switch ext {
+                case "pdf":  mimeType = "application/pdf"
+                case "txt":  mimeType = "text/plain"
+                case "doc":  mimeType = "application/msword"
+                default:     mimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                }
 
                 let source = try await contextService.uploadFileSource(
                     projectId: selectedProjectId, fileName: fileName,
@@ -176,7 +183,7 @@ final class ConversationViewModel: ObservableObject {
                 )
                 projectSources.insert(source, at: 0)
                 try await refreshContext()
-                uploadStatus = "✓ \(fileName) kaydedildi"
+                uploadStatus = "✓ \(fileName) saved"
                 errorMessage = nil
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
                 uploadStatus = nil
@@ -189,7 +196,7 @@ final class ConversationViewModel: ObservableObject {
 
     func refreshContext() async throws {
         guard !selectedProjectId.isEmpty else {
-            contextSummary = "Bir proje seçin veya oluşturun"
+            contextSummary = "Select or create a project"
             projectSources = []
             return
         }
@@ -213,11 +220,11 @@ final class ConversationViewModel: ObservableObject {
     }
 
     func respondAndListenAgain() {
-        guard !selectedProjectId.isEmpty else { errorMessage = "Önce proje seçin"; return }
+        guard !selectedProjectId.isEmpty else { errorMessage = "Please select a project first"; return }
 
         let capturedTranscript = liveTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !capturedTranscript.isEmpty else {
-            errorMessage = "Önce dinleme yapıp transkript oluşturun"
+            errorMessage = "Start listening first to generate a transcript"
             return
         }
 
@@ -233,7 +240,9 @@ final class ConversationViewModel: ObservableObject {
             ? nil
             : previousRounds.map { "[\($0.timestamp)] \($0.text)" }.joined(separator: "\n")
 
-        Task {
+        // Cancel any in-progress AI task before starting a new one
+        aiTask?.cancel()
+        aiTask = Task {
             mode = .answering
             audioService.stopListening()
             answerText = ""
@@ -247,19 +256,31 @@ final class ConversationViewModel: ObservableObject {
                 )
 
                 for try await chunk in stream {
+                    if Task.isCancelled { break }
                     answerText += chunk
                 }
 
-                // 3. Auto-start next listen round
-                listen()
+                // 3. Auto-start next listen round — only if not cancelled
+                if !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 300_000_000)
+                    if !Task.isCancelled {
+                        listen()
+                    }
+                }
             } catch {
-                mode = .idle
-                errorMessage = error.localizedDescription
+                if !Task.isCancelled {
+                    mode = .idle
+                    errorMessage = error.localizedDescription
+                }
             }
         }
     }
 
     func stop() {
+        // Cancel running AI stream immediately
+        aiTask?.cancel()
+        aiTask = nil
+
         audioService.stopListening()
         mode = .idle
 
@@ -269,7 +290,7 @@ final class ConversationViewModel: ObservableObject {
 
         let formatter = DateFormatter()
         formatter.dateFormat = "d MMM HH:mm"
-        let title = "Toplantı Transkripti – \(formatter.string(from: Date()))"
+        let title = "Meeting Transcript – \(formatter.string(from: Date()))"
 
         Task {
             do {

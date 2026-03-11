@@ -49,27 +49,6 @@ struct MainTabView: View {
             .tag(MainTab.settings)
         }
         .tint(DS.ColorToken.primary)
-        .safeAreaInset(edge: .bottom) {
-            if selectedTab == .home || selectedTab == .meetings {
-                HStack {
-                    Spacer()
-                    Button {
-                        showLiveMeeting = true
-                    } label: {
-                        Label("Start Recording", systemImage: "mic.fill")
-                            .font(DS.Typography.caption)
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, DS.Spacing.x16)
-                            .padding(.vertical, DS.Spacing.x12)
-                            .background(DS.ColorToken.primary)
-                            .clipShape(Capsule())
-                            .shadow(color: DS.Shadow.floating.color, radius: DS.Shadow.floating.radius, x: 0, y: 8)
-                    }
-                    .padding(.trailing, DS.Spacing.x16)
-                    .padding(.bottom, DS.Spacing.x8)
-                }
-            }
-        }
         .fullScreenCover(isPresented: $showLiveMeeting) {
             NavigationStack {
                 LiveMeetingView(session: session)

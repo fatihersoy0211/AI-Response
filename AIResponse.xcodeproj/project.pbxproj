@@ -7,10 +7,15 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A1B2C3D4E5F60001A1B2C3D4 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60002A1B2C3D4 /* Assets.xcassets */; };
 		0493B51F0D726DA239E00EE5 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98B732D8083668B53E5784B0 /* RootView.swift */; };
 		23924994BB92C0C2DB7B5E36 /* AIResponseApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1397311BDA9B6EC388DACB1 /* AIResponseApp.swift */; };
 		427E328CBACE2AF8B4FCFDF0 /* ActionItemsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = D956BEA29EE6D58F1D23C1B2 /* ActionItemsScreen.swift */; };
 		4CB74923CBDC815548ABC73D /* AuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 047085A25327E356E6F687AD /* AuthService.swift */; };
+		A1B2C3D4E5F60004A1B2C3D4 /* KeychainService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60005A1B2C3D4 /* KeychainService.swift */; };
+		A1B2C3D4E5F60006A1B2C3D4 /* AppleSignInService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60007A1B2C3D4 /* AppleSignInService.swift */; };
+		A1B2C3D4E5F60008A1B2C3D4 /* AuthenticationServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60009A1B2C3D4 /* AuthenticationServices.framework */; };
+		A1B2C3D4E5F6000AA1B2C3D4 /* AIResponse.entitlements in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000BA1B2C3D4 /* AIResponse.entitlements */; };
 		5E42B5702817578652A3A632 /* TranscriptScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF52AA67D4523C2136CA9E6A /* TranscriptScreen.swift */; };
 		5ED09D850F05B55A730D5CEA /* SettingsRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBA2D7FAE7C314F09FC389CF /* SettingsRootView.swift */; };
 		6648CA68A8D655E860ADC36E /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D31A1DEAD17D55021450492 /* LoginView.swift */; };
@@ -38,6 +43,7 @@
 /* Begin PBXFileReference section */
 		00C2901BC10EA98CE26121CF /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		047085A25327E356E6F687AD /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60005A1B2C3D4 /* KeychainService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainService.swift; sourceTree = "<group>"; };
 		0AB1341AFF99C1C214748AFD /* UserContextService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserContextService.swift; sourceTree = "<group>"; };
 		22E38C263422CF1059479432 /* AudioCaptureService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioCaptureService.swift; sourceTree = "<group>"; };
 		57A98E73B1C0AA7D2C407FC8 /* AppViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppViewModel.swift; sourceTree = "<group>"; };
@@ -51,6 +57,7 @@
 		98B732D8083668B53E5784B0 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		9D7A63C3A3DE0FA361DC7FDF /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		A81AEF1288975AEFA4B58ADA /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		A1B2C3D4E5F60002A1B2C3D4 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		AB54DB26C4BE8AEF6F0E995C /* AIBackendService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIBackendService.swift; sourceTree = "<group>"; };
 		BA4FCBD9F7D63A658186C2E0 /* Networking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Networking.swift; sourceTree = "<group>"; };
 		BB6AAE01C562B9423E4EE2CC /* MeetingsCalendarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingsCalendarView.swift; sourceTree = "<group>"; };
@@ -64,6 +71,9 @@
 		E2941915963F137798721DE2 /* GlobalSearchScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalSearchScreen.swift; sourceTree = "<group>"; };
 		EF52AA67D4523C2136CA9E6A /* TranscriptScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptScreen.swift; sourceTree = "<group>"; };
 		FEA71FC6993FCB8A71D5787B /* AIResponse.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = AIResponse.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1B2C3D4E5F60007A1B2C3D4 /* AppleSignInService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleSignInService.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60009A1B2C3D4 /* AuthenticationServices.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AuthenticationServices.framework; path = System/Library/Frameworks/AuthenticationServices.framework; sourceTree = SDKROOT; };
+		A1B2C3D4E5F6000BA1B2C3D4 /* AIResponse.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AIResponse.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -73,6 +83,8 @@
 				AB54DB26C4BE8AEF6F0E995C /* AIBackendService.swift */,
 				22E38C263422CF1059479432 /* AudioCaptureService.swift */,
 				047085A25327E356E6F687AD /* AuthService.swift */,
+				A1B2C3D4E5F60007A1B2C3D4 /* AppleSignInService.swift */,
+				A1B2C3D4E5F60005A1B2C3D4 /* KeychainService.swift */,
 				BA4FCBD9F7D63A658186C2E0 /* Networking.swift */,
 				0AB1341AFF99C1C214748AFD /* UserContextService.swift */,
 			);
@@ -154,6 +166,8 @@
 			isa = PBXGroup;
 			children = (
 				A81AEF1288975AEFA4B58ADA /* Info.plist */,
+				A1B2C3D4E5F60002A1B2C3D4 /* Assets.xcassets */,
+				A1B2C3D4E5F6000BA1B2C3D4 /* AIResponse.entitlements */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -163,7 +177,16 @@
 			children = (
 				DF6974E2AEE1766FBEE5ABDA /* AIResponse */,
 				CF78CAF4B626F25D2A15559C /* Products */,
+				A1B2C3D4E5F6000CA1B2C3D4 /* Frameworks */,
 			);
+			sourceTree = "<group>";
+		};
+		A1B2C3D4E5F6000CA1B2C3D4 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				A1B2C3D4E5F60009A1B2C3D4 /* AuthenticationServices.framework */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 		57497C093B5398670BD16652 /* Auth */ = {
@@ -277,6 +300,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 305C4556266B365F9309EEA9 /* Build configuration list for PBXNativeTarget "AIResponse" */;
 			buildPhases = (
+				A1B2C3D4E5F60003A1B2C3D4 /* Resources */,
 				D88589A2DC9060A4110570AB /* Sources */,
 			);
 			buildRules = (
@@ -320,6 +344,17 @@
 		};
 /* End PBXProject section */
 
+/* Begin PBXResourcesBuildPhase section */
+		A1B2C3D4E5F60003A1B2C3D4 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1B2C3D4E5F60001A1B2C3D4 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		D88589A2DC9060A4110570AB /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -333,6 +368,7 @@
 				714BB796A2F252CE2E69EAAA /* AppViewModel.swift in Sources */,
 				F86F1DDB594E3316C72436A5 /* AudioCaptureService.swift in Sources */,
 				4CB74923CBDC815548ABC73D /* AuthService.swift in Sources */,
+				A1B2C3D4E5F60004A1B2C3D4 /* KeychainService.swift in Sources */,
 				DE255BCC1636C172D063EDA4 /* Components.swift in Sources */,
 				7BCAACE997A06C9CCA361BF0 /* ConversationView.swift in Sources */,
 				B1F2EB48528636790E6F63E7 /* ConversationViewModel.swift in Sources */,

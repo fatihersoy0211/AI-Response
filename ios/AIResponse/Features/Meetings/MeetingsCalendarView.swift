@@ -5,7 +5,6 @@ struct MeetingsCalendarView: View {
     let openLiveMeeting: () -> Void
 
     @State private var mode: AgendaMode = .daily
-    @State private var prepareMeeting: MeetingDigest? = nil
 
     var body: some View {
         ScrollView {
@@ -16,48 +15,20 @@ struct MeetingsCalendarView: View {
                 }
                 .pickerStyle(.segmented)
 
-                DSProgressPill(title: "Calendar Sync", value: 0.92)
-
                 DSSectionHeader(title: "Upcoming Meetings")
-
-                ForEach(sampleMeetings) { meeting in
-                    VStack(spacing: DS.Spacing.x8) {
-                        NavigationLink(destination: MeetingDetailsView(meeting: meeting)) {
-                            DSMeetingCard(
-                                title: meeting.title,
-                                time: "\(meeting.time) · \(meeting.duration)",
-                                source: meeting.source,
-                                participants: meeting.participants
-                            )
-                        }
-                        .buttonStyle(.plain)
-
-                        HStack {
-                            DSButton(title: "Join", icon: "video.fill", kind: .secondary) {
-                                openLiveMeeting()
-                            }
-                            DSButton(title: "Prepare", icon: "sparkles", kind: .secondary) {
-                                prepareMeeting = meeting
-                            }
-                        }
-                    }
-                }
-
-                DSSectionHeader(title: "AI Preparation")
-                DSAIInsightCard(
-                    title: "Prepare Briefing",
-                    message: "AI prepared 3 talking points for your 14:30 stakeholder review."
+                DSEmptyState(
+                    icon: "calendar.badge.clock",
+                    title: "No upcoming meetings",
+                    message: "Scheduled meetings will appear here after calendar sync."
                 )
 
+                DSSectionHeader(title: "Start a Meeting Now")
                 DSButton(title: "Start Recording", icon: "mic.fill", kind: .primary, action: openLiveMeeting)
             }
             .padding(DS.Spacing.x16)
         }
         .background(DS.ColorToken.canvas)
         .navigationTitle("Meetings")
-        .navigationDestination(item: $prepareMeeting) { meeting in
-            MeetingDetailsView(meeting: meeting)
-        }
     }
 }
 
@@ -66,7 +37,7 @@ private enum AgendaMode {
     case weekly
 }
 
-struct MeetingDigest: Identifiable {
+struct MeetingDigest: Identifiable, Hashable {
     let id = UUID()
     let title: String
     let time: String
@@ -74,9 +45,3 @@ struct MeetingDigest: Identifiable {
     let source: String
     let participants: Int
 }
-
-private let sampleMeetings: [MeetingDigest] = [
-    .init(title: "Executive Weekly", time: "09:30", duration: "45m", source: "Zoom", participants: 7),
-    .init(title: "Partner Sync", time: "11:00", duration: "30m", source: "Meet", participants: 4),
-    .init(title: "Roadmap Review", time: "14:30", duration: "60m", source: "Teams", participants: 9)
-]

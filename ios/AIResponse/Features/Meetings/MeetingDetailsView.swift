@@ -1,3 +1,4 @@
+import UIKit
 import SwiftUI
 
 struct MeetingDetailsView: View {
@@ -42,8 +43,26 @@ struct MeetingDetailsView: View {
                 }
 
                 HStack {
-                    DSButton(title: "Share", icon: "square.and.arrow.up", kind: .secondary) {}
-                    DSButton(title: "Export", icon: "tray.and.arrow.down", kind: .secondary) {}
+                    DSButton(title: "Share", icon: "square.and.arrow.up", kind: .secondary) {
+                        let text = "\(meeting.title)\n\(meeting.time) · \(meeting.duration) · \(meeting.participants) participants"
+                        let av = UIActivityViewController(activityItems: [text], applicationActivities: nil)
+                        UIApplication.shared.connectedScenes
+                            .compactMap { $0 as? UIWindowScene }
+                            .flatMap { $0.windows }
+                            .first(where: { $0.isKeyWindow })?
+                            .rootViewController?.present(av, animated: true)
+                    }
+                    DSButton(title: "Export", icon: "tray.and.arrow.down", kind: .secondary) {
+                        let summary = "Meeting: \(meeting.title)\nTime: \(meeting.time) · \(meeting.duration)\nParticipants: \(meeting.participants)"
+                        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(meeting.title).txt")
+                        try? summary.write(to: url, atomically: true, encoding: .utf8)
+                        let av = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+                        UIApplication.shared.connectedScenes
+                            .compactMap { $0 as? UIWindowScene }
+                            .flatMap { $0.windows }
+                            .first(where: { $0.isKeyWindow })?
+                            .rootViewController?.present(av, animated: true)
+                    }
                 }
             }
             .padding(DS.Spacing.x16)
