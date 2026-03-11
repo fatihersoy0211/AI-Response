@@ -21,12 +21,13 @@ from .schemas import (
     RegisterRequest,
     SourceResponse,
     TextSourceUploadRequest,
+    TranscriptSaveRequest,
 )
 from .store import JsonStore, UserRecord
 
 load_dotenv()
 
-app = FastAPI(title="AI Response API", version="0.2.0")
+app = FastAPI(title="AI Response API", version="0.3.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -81,6 +82,38 @@ def analyze_source_text(client: OpenAI, model: str, project_name: str, title: st
     )
     summary = (response.output_text or "").strip()
     return summary if summary else "Kaynak analiz edildi, ancak ozet cikarilamadi."
+
+
+def build_ai_prompt(context_summary: str, session_transcript: str | None, current_transcript: str) -> str:
+    """
+    Build a focused, fast AI prompt that includes:
+    - Full project knowledge base (all source analyses)
+    - Accumulated session transcript (all previous rounds in this meeting)
+    - Current transcript (the latest thing the user said)
+    """
+    parts = [
+        "Sen proje tabanli calistirilan bir sesli toplanti asistanisin.",
+        "Asagidaki bilgi tabanini ve toplanti baglaminı kullanarak anlik soruya kisa, dogru ve uygulanabilir bir yanit ver.",
+        "Bilgi tabani disinda bilgi uretme. Cevap 3-5 cumle olsun, madde ise maddeli ver.",
+        "",
+        "=== PROJE BİLGİ TABANI ===",
+        context_summary,
+    ]
+
+    if session_transcript and session_transcript.strip():
+        parts += [
+            "",
+            "=== BU TOPLANTININ ÖNCEKI KONUŞMA GEÇMİŞİ ===",
+            session_transcript.strip(),
+        ]
+
+    parts += [
+        "",
+        "=== ŞU ANKİ SORU / TRANSKRİPT ===",
+        current_transcript.strip(),
+    ]
+
+    return "\n".join(parts)
 
 
 @app.get("/health")
@@ -158,6 +191,59 @@ def upload_text_source(
         source_type="text",
         title=payload.title,
         raw_text=payload.text,
+        analysis=analysis,
+    )
+    return SourceResponse(
+        sourceId=source["source_id"],
+        sourceType=source["source_type"],
+        title=source["title"],
+        analysis=source["analysis"],
+        createdAtISO8601=source["created_at"],
+    )
+
+
+@app.post("/projects/{project_id}/sources/transcript", response_model=SourceResponse)
+def save_transcript_source(
+    project_id: str,
+    payload: TranscriptSaveRequest,
+    user: UserRecord = Depends(get_current_user),
+) -> SourceResponse:
+    """
+    Save a meeting transcript directly to the project knowledge base.
+    Uses a lightweight keyword extraction instead of a full AI analysis call
+    so it is fast and cheap.
+    """
+    project = store.get_project(user.user_id, project_id)
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+
+    client = get_openai_client()
+    model = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+
+    # Lightweight transcript indexing prompt – much cheaper than full analysis
+    index_prompt = (
+        "Asagidaki toplanti transkriptinden madde madde key points, kararlar ve eylem maddeleri cikart. "
+        "Maksimum 200 kelime. Yalnizca transkriptte gecen bilgileri kullan.\n\n"
+        f"Transkript:\n{payload.transcript[:12000]}"
+    )
+
+    try:
+        resp = client.responses.create(
+            model=model,
+            input=index_prompt,
+            temperature=0.1,
+            max_output_tokens=300,
+        )
+        analysis = (resp.output_text or "").strip() or "Transkript kaydedildi."
+    except Exception:
+        analysis = "Transkript kaydedildi (analiz yapilamadi)."
+
+    source = store.add_project_source(
+        user.user_id,
+        project_id,
+        source_type="transcript",
+        title=payload.title,
+        raw_text=payload.transcript,
         analysis=analysis,
     )
     return SourceResponse(
@@ -247,12 +333,10 @@ def ai_respond(payload: AIRespondRequest, user: UserRecord = Depends(get_current
     client = get_openai_client()
     model = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
 
-    prompt = (
-        "Sen proje bazli calisan bir sesli asistanin beyni olarak yanit veriyorsun. "
-        "Asagidaki proje bilgisini birincil kaynak kabul et. "
-        "Kisa, dogru ve uygulanabilir cevap ver. Bilgi yoksa bunu acikca soyle.\n\n"
-        f"Proje bilgi ozeti:\n{context_summary}\n\n"
-        f"Kullanicinin anlik sorusu (transkript):\n{payload.transcript}"
+    prompt = build_ai_prompt(
+        context_summary=context_summary,
+        session_transcript=payload.sessionTranscript,
+        current_transcript=payload.transcript,
     )
 
     def event_stream():
@@ -269,9 +353,9 @@ def ai_respond(payload: AIRespondRequest, user: UserRecord = Depends(get_current
                         if delta:
                             yield f"data: {json.dumps({'delta': delta}, ensure_ascii=False)}\n\n"
 
-                yield "data: {\"done\": true}\n\n"
+                yield 'data: {"done": true}\n\n'
         except Exception as exc:
-            payload = {"error": f"Model request failed: {exc}"}
-            yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+            err = {"error": f"Model request failed: {exc}"}
+            yield f"data: {json.dumps(err, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")

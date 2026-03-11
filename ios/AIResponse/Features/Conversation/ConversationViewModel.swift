@@ -8,26 +8,46 @@ enum ConversationMode: String {
     case answering = "Answering"
 }
 
+/// One captured speech round in the session
+struct TranscriptEntry: Identifiable {
+    let id = UUID()
+    let timestamp: String
+    let text: String
+}
+
 @MainActor
 final class ConversationViewModel: ObservableObject {
     @Published var mode: ConversationMode = .idle
     @Published var answerText: String = ""
-    @Published var contextSummary: String = "Bir proje secin veya olusturun"
+    @Published var contextSummary: String = "Bir proje seçin veya oluşturun"
     @Published var errorMessage: String?
     @Published var liveTranscript: String = ""
+
+    /// All completed listen rounds in this session
+    @Published var sessionLog: [TranscriptEntry] = []
+
+    /// Sources already in the selected project
+    @Published var projectSources: [SourceItem] = []
 
     @Published var projects: [UserProject] = []
     @Published var selectedProjectId: String = ""
     @Published var newProjectName: String = ""
-
     @Published var sourceTitle: String = ""
     @Published var userDataDraft: String = ""
+
+    /// Status feedback during uploads
+    @Published var uploadStatus: String? = nil
 
     private let session: UserSession
     private let audioService: AudioCaptureService
     private let contextService: UserContextService
     private let aiService: AIBackendService
     private var cancellables = Set<AnyCancellable>()
+
+    /// Full accumulated transcript text from previous rounds in this session.
+    var sessionTranscript: String {
+        sessionLog.map { "[\($0.timestamp)] \($0.text)" }.joined(separator: "\n")
+    }
 
     init(
         session: UserSession,
@@ -48,6 +68,8 @@ final class ConversationViewModel: ObservableObject {
             .store(in: &cancellables)
     }
 
+    // MARK: - Lifecycle
+
     func prepare() async {
         do {
             let granted = await audioService.requestPermissions()
@@ -55,7 +77,6 @@ final class ConversationViewModel: ObservableObject {
                 errorMessage = "Speech or microphone permission denied"
                 return
             }
-
             try await loadProjects()
         } catch {
             errorMessage = error.localizedDescription
@@ -74,6 +95,8 @@ final class ConversationViewModel: ObservableObject {
             try await refreshContext()
         }
     }
+
+    // MARK: - Projects
 
     func createProject() {
         let name = newProjectName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -95,72 +118,69 @@ final class ConversationViewModel: ObservableObject {
 
     func selectProject(_ projectId: String) {
         selectedProjectId = projectId
+        sessionLog = []
         Task {
-            do {
-                try await refreshContext()
-            } catch {
-                errorMessage = error.localizedDescription
-            }
+            do { try await refreshContext() }
+            catch { errorMessage = error.localizedDescription }
         }
     }
 
-    func uploadUserData() {
-        guard !selectedProjectId.isEmpty else {
-            errorMessage = "Once proje secin"
-            return
-        }
+    // MARK: - Knowledge Upload
 
+    func uploadUserData() {
+        guard !selectedProjectId.isEmpty else { errorMessage = "Önce proje seçin"; return }
         let title = sourceTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         let text = userDataDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty, !text.isEmpty else { return }
 
+        uploadStatus = "Metin analiz ediliyor…"
         Task {
             do {
                 try await contextService.uploadTextSource(
-                    projectId: selectedProjectId,
-                    title: title,
-                    text: text,
-                    token: session.accessToken
+                    projectId: selectedProjectId, title: title, text: text, token: session.accessToken
                 )
                 sourceTitle = ""
                 userDataDraft = ""
                 try await refreshContext()
+                uploadStatus = "✓ Metin kaydedildi"
                 errorMessage = nil
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                uploadStatus = nil
             } catch {
+                uploadStatus = nil
                 errorMessage = error.localizedDescription
             }
         }
     }
 
     func uploadPickedFile(url: URL) {
-        guard !selectedProjectId.isEmpty else {
-            errorMessage = "Once proje secin"
-            return
-        }
+        guard !selectedProjectId.isEmpty else { errorMessage = "Önce proje seçin"; return }
 
+        uploadStatus = "Dosya yükleniyor ve analiz ediliyor…"
         Task {
             do {
                 let access = url.startAccessingSecurityScopedResource()
-                defer {
-                    if access { url.stopAccessingSecurityScopedResource() }
-                }
+                defer { if access { url.stopAccessingSecurityScopedResource() } }
 
                 let fileData = try Data(contentsOf: url)
                 let fileName = url.lastPathComponent
                 let ext = url.pathExtension.lowercased()
-                let mimeType = ext == "pdf" ? "application/pdf" : "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                let mimeType = ext == "pdf"
+                    ? "application/pdf"
+                    : "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
-                try await contextService.uploadFileSource(
-                    projectId: selectedProjectId,
-                    fileName: fileName,
-                    mimeType: mimeType,
-                    fileData: fileData,
-                    token: session.accessToken
+                let source = try await contextService.uploadFileSource(
+                    projectId: selectedProjectId, fileName: fileName,
+                    mimeType: mimeType, fileData: fileData, token: session.accessToken
                 )
-
+                projectSources.insert(source, at: 0)
                 try await refreshContext()
+                uploadStatus = "✓ \(fileName) kaydedildi"
                 errorMessage = nil
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                uploadStatus = nil
             } catch {
+                uploadStatus = nil
                 errorMessage = error.localizedDescription
             }
         }
@@ -168,13 +188,18 @@ final class ConversationViewModel: ObservableObject {
 
     func refreshContext() async throws {
         guard !selectedProjectId.isEmpty else {
-            contextSummary = "Bir proje secin veya olusturun"
+            contextSummary = "Bir proje seçin veya oluşturun"
+            projectSources = []
             return
         }
-
-        let context = try await contextService.fetchProjectContext(projectId: selectedProjectId, token: session.accessToken)
+        let context = try await contextService.fetchProjectContext(
+            projectId: selectedProjectId, token: session.accessToken
+        )
         contextSummary = context.summary
+        projectSources = context.sources
     }
+
+    // MARK: - Recording & AI
 
     func listen() {
         do {
@@ -187,15 +212,25 @@ final class ConversationViewModel: ObservableObject {
     }
 
     func respondAndListenAgain() {
-        guard !selectedProjectId.isEmpty else {
-            errorMessage = "Once proje secin"
+        guard !selectedProjectId.isEmpty else { errorMessage = "Önce proje seçin"; return }
+
+        let capturedTranscript = liveTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !capturedTranscript.isEmpty else {
+            errorMessage = "Önce dinleme yapıp transkript oluşturun"
             return
         }
 
-        guard !liveTranscript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            errorMessage = "Once dinleme yapip transkript olusturun"
-            return
-        }
+        // 1. Commit this round to the session log
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        let entry = TranscriptEntry(timestamp: formatter.string(from: Date()), text: capturedTranscript)
+        sessionLog.append(entry)
+
+        // 2. Build accumulated context from all PREVIOUS rounds (not current)
+        let previousRounds = sessionLog.dropLast()
+        let accumulatedContext: String? = previousRounds.isEmpty
+            ? nil
+            : previousRounds.map { "[\($0.timestamp)] \($0.text)" }.joined(separator: "\n")
 
         Task {
             mode = .answering
@@ -205,7 +240,8 @@ final class ConversationViewModel: ObservableObject {
             do {
                 let stream = aiService.streamAnswer(
                     projectId: selectedProjectId,
-                    transcript: liveTranscript,
+                    transcript: capturedTranscript,
+                    sessionTranscript: accumulatedContext,
                     token: session.accessToken
                 )
 
@@ -213,6 +249,7 @@ final class ConversationViewModel: ObservableObject {
                     answerText += chunk
                 }
 
+                // 3. Auto-start next listen round
                 listen()
             } catch {
                 mode = .idle
@@ -224,5 +261,28 @@ final class ConversationViewModel: ObservableObject {
     func stop() {
         audioService.stopListening()
         mode = .idle
+
+        // Auto-save full session transcript to project knowledge base (background)
+        let fullTranscript = sessionTranscript
+        guard !selectedProjectId.isEmpty, !fullTranscript.isEmpty else { return }
+
+        let formatter = DateFormatter()
+        formatter.dateFormat = "d MMM HH:mm"
+        let title = "Toplantı Transkripti – \(formatter.string(from: Date()))"
+
+        Task {
+            do {
+                let source = try await contextService.saveTranscript(
+                    projectId: selectedProjectId,
+                    title: title,
+                    transcript: fullTranscript,
+                    token: session.accessToken
+                )
+                projectSources.insert(source, at: 0)
+                try await refreshContext()
+            } catch {
+                // Silent fail – session log is still visible in the UI
+            }
+        }
     }
 }

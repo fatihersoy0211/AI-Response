@@ -34,6 +34,11 @@ class TextSourceUploadRequest(BaseModel):
     text: str = Field(min_length=1, max_length=100_000)
 
 
+class TranscriptSaveRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=160)
+    transcript: str = Field(min_length=1, max_length=100_000)
+
+
 class SourceResponse(BaseModel):
     sourceId: str
     sourceType: str
@@ -51,3 +56,5 @@ class ProjectContextResponse(BaseModel):
 class AIRespondRequest(BaseModel):
     projectId: str = Field(min_length=1)
     transcript: str = Field(min_length=1, max_length=10_000)
+    # Accumulated transcript from the entire session (all previous rounds)
+    sessionTranscript: str | None = Field(default=None, max_length=30_000)

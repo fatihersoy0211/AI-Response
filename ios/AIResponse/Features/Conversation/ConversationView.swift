@@ -18,10 +18,9 @@ struct LiveMeetingView: View {
     @State private var showKnowledgeSheet = false
 
     private var allowedFileTypes: [UTType] {
-        var types: [UTType] = [.pdf]
-        if let docx = UTType(filenameExtension: "docx") {
-            types.append(docx)
-        }
+        var types: [UTType] = [.pdf, .text, .plainText]
+        if let docx = UTType(filenameExtension: "docx") { types.append(docx) }
+        if let doc = UTType(filenameExtension: "doc") { types.append(doc) }
         return types
     }
 
@@ -39,6 +38,7 @@ struct LiveMeetingView: View {
                     header
                     recordingHero
                     participants
+                    sessionLogCard
                     transcriptCard
                     aiAnswerCard
                     controls
@@ -69,7 +69,10 @@ struct LiveMeetingView: View {
         .navigationTitle("Live Meeting")
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
-                Button("Close") { dismiss() }
+                Button("Close") {
+                    viewModel.stop()   // auto-saves transcript before closing
+                    dismiss()
+                }
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -77,9 +80,19 @@ struct LiveMeetingView: View {
                 } label: {
                     Label("Knowledge", systemImage: "square.and.arrow.down")
                 }
+                .overlay(alignment: .topTrailing) {
+                    if !viewModel.projectSources.isEmpty {
+                        Circle()
+                            .fill(DS.ColorToken.primary)
+                            .frame(width: 8, height: 8)
+                            .offset(x: 4, y: -4)
+                    }
+                }
             }
         }
     }
+
+    // MARK: - Header
 
     private var header: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.x12) {
@@ -87,7 +100,7 @@ struct LiveMeetingView: View {
                 Circle()
                     .fill(viewModel.mode == .listening ? DS.ColorToken.error : DS.ColorToken.warning)
                     .frame(width: 10, height: 10)
-                Text(viewModel.mode == .listening ? "Recording Active" : "Ready")
+                Text(viewModel.mode == .listening ? "Dinleniyor" : "Hazır")
                     .font(DS.Typography.caption)
                     .foregroundStyle(DS.ColorToken.textSecondary)
                 Spacer()
@@ -95,9 +108,13 @@ struct LiveMeetingView: View {
             }
 
             if viewModel.projects.isEmpty {
-                DSEmptyState(icon: "folder.badge.plus", title: "No project selected", message: "Create a project to keep this meeting knowledge organized.")
+                DSEmptyState(
+                    icon: "folder.badge.plus",
+                    title: "Proje seçilmedi",
+                    message: "Sağ üstteki Knowledge butonundan proje oluşturun."
+                )
             } else {
-                Picker("Project", selection: $viewModel.selectedProjectId) {
+                Picker("Proje", selection: $viewModel.selectedProjectId) {
                     ForEach(viewModel.projects) { project in
                         Text(project.name).tag(project.projectId)
                     }
@@ -107,9 +124,26 @@ struct LiveMeetingView: View {
                     viewModel.selectProject(newValue)
                 }
             }
+
+            // Upload status banner
+            if let status = viewModel.uploadStatus {
+                HStack(spacing: DS.Spacing.x8) {
+                    if status.hasPrefix("✓") {
+                        Image(systemName: "checkmark.circle.fill").foregroundStyle(DS.ColorToken.success)
+                    } else {
+                        ProgressView().scaleEffect(0.7)
+                    }
+                    Text(status)
+                        .font(DS.Typography.caption)
+                        .foregroundStyle(DS.ColorToken.textSecondary)
+                }
+                .transition(.opacity)
+            }
         }
         .dsCardStyle()
     }
+
+    // MARK: - Recording Hero
 
     private var recordingHero: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.x12) {
@@ -144,9 +178,11 @@ struct LiveMeetingView: View {
         .clipShape(RoundedRectangle(cornerRadius: DS.Radius.lg, style: .continuous))
     }
 
+    // MARK: - Participants
+
     private var participants: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.x8) {
-            Text("Participants")
+            Text("Katılımcılar")
                 .font(DS.Typography.caption)
                 .foregroundStyle(DS.ColorToken.textSecondary)
             ScrollView(.horizontal, showsIndicators: false) {
@@ -160,26 +196,67 @@ struct LiveMeetingView: View {
         .dsCardStyle()
     }
 
+    // MARK: - Session Log (all previous rounds)
+
+    @ViewBuilder
+    private var sessionLogCard: some View {
+        if !viewModel.sessionLog.isEmpty {
+            VStack(alignment: .leading, spacing: DS.Spacing.x8) {
+                DSSectionHeader(title: "Toplantı Geçmişi – \(viewModel.sessionLog.count) tur")
+                ForEach(viewModel.sessionLog) { entry in
+                    VStack(alignment: .leading, spacing: DS.Spacing.x4) {
+                        Text(entry.timestamp)
+                            .font(DS.Typography.micro)
+                            .foregroundStyle(DS.ColorToken.textTertiary)
+                        Text(entry.text)
+                            .font(DS.Typography.body)
+                            .foregroundStyle(DS.ColorToken.textPrimary)
+                    }
+                    .padding(DS.Spacing.x12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(DS.ColorToken.surface)
+                    .clipShape(RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous))
+                }
+            }
+            .dsCardStyle()
+        }
+    }
+
+    // MARK: - Live Transcript
+
     private var transcriptCard: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.x8) {
-            DSSectionHeader(title: "Live Transcript")
-            Text(viewModel.liveTranscript.isEmpty ? "Waiting for speech input..." : viewModel.liveTranscript)
+            DSSectionHeader(title: "Canlı Transkript")
+            Text(viewModel.liveTranscript.isEmpty ? "Konuşmayı dinlemek için Listen'a bas…" : viewModel.liveTranscript)
                 .font(DS.Typography.body)
                 .foregroundStyle(DS.ColorToken.textPrimary)
             HStack {
-                DSButton(title: "Bookmark Moment", icon: "bookmark", kind: .secondary) {}
-                DSButton(title: "Add Note", icon: "note.text.badge.plus", kind: .secondary) {}
+                DSButton(title: "Yer İmi", icon: "bookmark", kind: .secondary) {}
+                DSButton(title: "Not Ekle", icon: "note.text.badge.plus", kind: .secondary) {}
             }
         }
         .dsCardStyle()
     }
 
+    // MARK: - AI Answer
+
     private var aiAnswerCard: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.x8) {
-            DSSectionHeader(title: "AI Response")
-            Text(viewModel.answerText.isEmpty ? "AI response will appear here in real time." : viewModel.answerText)
-                .font(DS.Typography.body)
-                .foregroundStyle(DS.ColorToken.textPrimary)
+            DSSectionHeader(title: "AI Yanıtı")
+            if viewModel.mode == .answering && viewModel.answerText.isEmpty {
+                HStack(spacing: DS.Spacing.x8) {
+                    ProgressView()
+                    Text("AI yanıt oluşturuyor…")
+                        .font(DS.Typography.caption)
+                        .foregroundStyle(DS.ColorToken.textSecondary)
+                }
+            } else {
+                Text(viewModel.answerText.isEmpty
+                     ? "Respond'a bastığında AI yanıtı burada görünecek."
+                     : viewModel.answerText)
+                    .font(DS.Typography.body)
+                    .foregroundStyle(DS.ColorToken.textPrimary)
+            }
             if let error = viewModel.errorMessage {
                 Text(error)
                     .font(DS.Typography.caption)
@@ -189,27 +266,68 @@ struct LiveMeetingView: View {
         .dsCardStyle()
     }
 
+    // MARK: - Controls
+
     private var controls: some View {
         HStack(spacing: DS.Spacing.x12) {
-            DSButton(title: viewModel.mode == .listening ? "Resume" : "Listen", icon: "mic.fill", kind: .primary) {
+            DSButton(
+                title: viewModel.mode == .listening ? "Dinliyor…" : "Listen",
+                icon: "mic.fill",
+                kind: .primary,
+                isDisabled: viewModel.mode == .listening
+            ) {
                 viewModel.listen()
             }
-            DSButton(title: "Respond", icon: "sparkles", kind: .secondary) {
+            DSButton(
+                title: "Respond",
+                icon: "sparkles",
+                kind: .secondary,
+                isLoading: viewModel.mode == .answering
+            ) {
                 viewModel.respondAndListenAgain()
             }
-            DSButton(title: "Stop", icon: "stop.fill", kind: .destructive) {
+            DSButton(title: "Durdur", icon: "stop.fill", kind: .destructive) {
                 viewModel.stop()
             }
         }
     }
 
+    // MARK: - Knowledge Sheet
+
     private var knowledgeSheet: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: DS.Spacing.x16) {
-                    DSSectionHeader(title: "Create Project")
+
+                    // ── Saved sources ──────────────────────────────────
+                    if !viewModel.projectSources.isEmpty {
+                        DSSectionHeader(title: "Proje Kaynakları (\(viewModel.projectSources.count))")
+                        ForEach(viewModel.projectSources) { source in
+                            HStack(spacing: DS.Spacing.x12) {
+                                Image(systemName: sourceIcon(source.sourceType))
+                                    .font(.system(size: 16))
+                                    .foregroundStyle(DS.ColorToken.primary)
+                                    .frame(width: 28)
+                                VStack(alignment: .leading, spacing: DS.Spacing.x4) {
+                                    Text(source.title)
+                                        .font(DS.Typography.bodyMedium)
+                                        .foregroundStyle(DS.ColorToken.textPrimary)
+                                        .lineLimit(1)
+                                    Text(source.sourceType.uppercased())
+                                        .font(DS.Typography.micro)
+                                        .foregroundStyle(DS.ColorToken.textTertiary)
+                                }
+                                Spacer()
+                                DSBadge(text: "✓", tone: DS.ColorToken.success)
+                            }
+                            .dsCardStyle()
+                        }
+                    }
+
+                    // ── Create project ─────────────────────────────────
+                    DSSectionHeader(title: "Proje Oluştur")
                     HStack {
-                        TextField("Project name", text: $viewModel.newProjectName)
+                        TextField("Proje adı", text: $viewModel.newProjectName)
                             .padding(.horizontal, DS.Spacing.x12)
                             .padding(.vertical, DS.Spacing.x12)
                             .background(DS.ColorToken.surface)
@@ -218,14 +336,15 @@ struct LiveMeetingView: View {
                                 RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous)
                                     .stroke(DS.ColorToken.border, lineWidth: 1)
                             )
-                        DSButton(title: "Create", kind: .primary) {
+                        DSButton(title: "Oluştur", kind: .primary) {
                             viewModel.createProject()
                         }
-                        .frame(width: 120)
+                        .frame(width: 110)
                     }
 
-                    DSSectionHeader(title: "Analyze Text Source")
-                    TextField("Source title", text: $viewModel.sourceTitle)
+                    // ── Analyze text ───────────────────────────────────
+                    DSSectionHeader(title: "Metin Kaynağı Ekle")
+                    TextField("Kaynak başlığı", text: $viewModel.sourceTitle)
                         .padding(.horizontal, DS.Spacing.x12)
                         .padding(.vertical, DS.Spacing.x12)
                         .background(DS.ColorToken.surface)
@@ -245,16 +364,31 @@ struct LiveMeetingView: View {
                                 .stroke(DS.ColorToken.border, lineWidth: 1)
                         )
 
-                    DSButton(title: "Analyze Text", kind: .primary) {
+                    DSButton(title: "Metni Analiz Et & Kaydet", icon: "sparkles", kind: .primary) {
                         viewModel.uploadUserData()
                     }
 
-                    DSSectionHeader(title: "Analyze File Source")
-                    DSButton(title: "Upload PDF or DOCX", icon: "doc.badge.plus", kind: .secondary) {
+                    // ── Upload file ────────────────────────────────────
+                    DSSectionHeader(title: "Dosya Kaynağı Ekle (PDF / DOCX / TXT)")
+                    DSButton(title: "Dosya Seç ve Yükle", icon: "doc.badge.plus", kind: .secondary) {
                         isFileImporterPresented = true
                     }
 
-                    DSSectionHeader(title: "Project Context")
+                    if let status = viewModel.uploadStatus {
+                        HStack(spacing: DS.Spacing.x8) {
+                            if status.hasPrefix("✓") {
+                                Image(systemName: "checkmark.circle.fill").foregroundStyle(DS.ColorToken.success)
+                            } else {
+                                ProgressView().scaleEffect(0.8)
+                            }
+                            Text(status)
+                                .font(DS.Typography.caption)
+                                .foregroundStyle(DS.ColorToken.textSecondary)
+                        }
+                    }
+
+                    // ── Context summary ────────────────────────────────
+                    DSSectionHeader(title: "Proje Bağlamı")
                     Text(viewModel.contextSummary)
                         .font(DS.Typography.body)
                         .foregroundStyle(DS.ColorToken.textSecondary)
@@ -266,9 +400,18 @@ struct LiveMeetingView: View {
             .navigationTitle("Meeting Knowledge")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { showKnowledgeSheet = false }
+                    Button("Tamam") { showKnowledgeSheet = false }
                 }
             }
+        }
+    }
+
+    private func sourceIcon(_ type: String) -> String {
+        switch type {
+        case "file": return "doc.fill"
+        case "transcript": return "waveform"
+        case "text": return "text.alignleft"
+        default: return "doc.text"
         }
     }
 }

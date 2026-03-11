@@ -34,6 +34,8 @@ struct ProjectContextSummary: Codable {
 struct AIQueryRequest: Codable {
     let projectId: String
     let transcript: String
+    /// All previous transcript rounds accumulated in this session
+    let sessionTranscript: String?
 }
 
 struct AuthResponse: Codable {
