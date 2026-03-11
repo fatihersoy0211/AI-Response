@@ -25,8 +25,20 @@ final class ConversationViewModel: ObservableObject {
     @Published var transcriptionStatus: String = "Ready to listen"
     @Published var didUpdateContext = false
 
-    /// All completed listen rounds in this session
+    /// All completed listen rounds in this session (legacy display)
     @Published var sessionLog: [TranscriptEntry] = []
+
+    /// New: recording state machine
+    @Published var recordingState: RecordingState = .idle
+
+    /// New: rolling 36-sample audio level history for live waveform
+    @Published var audioLevelHistory: [Float] = Array(repeating: 0, count: 36)
+
+    /// New: current in-progress listen session
+    @Published var currentSession: ListenSession? = nil
+
+    /// New: all completed sessions this app launch
+    @Published var allSessions: [ListenSession] = []
 
     /// Sources already in the selected project
     @Published var projectSources: [SourceItem] = []
@@ -73,6 +85,18 @@ final class ConversationViewModel: ObservableObject {
                 self?.transcriptionStatus = text.isEmpty ? "Listening active" : "Transcribing current session"
             }
             .store(in: &cancellables)
+
+        self.speechService.audioLevelPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] level in
+                self?.shiftAudioLevel(level)
+            }
+            .store(in: &cancellables)
+    }
+
+    private func shiftAudioLevel(_ level: Float) {
+        audioLevelHistory.removeFirst()
+        audioLevelHistory.append(level)
     }
 
     // MARK: - Lifecycle
@@ -83,6 +107,7 @@ final class ConversationViewModel: ObservableObject {
             if !granted {
                 errorMessage = "Speech or microphone permission denied"
                 transcriptionStatus = "Microphone permission denied"
+                recordingState = .permissionDenied
                 return
             }
             try await loadProjects()
@@ -129,6 +154,7 @@ final class ConversationViewModel: ObservableObject {
         guard projectId != selectedProjectId else { return }
         selectedProjectId = projectId
         sessionLog = []
+        allSessions = []
         Task {
             do { try await refreshContext() }
             catch { errorMessage = error.localizedDescription }
@@ -219,9 +245,28 @@ final class ConversationViewModel: ObservableObject {
     // MARK: - Recording & AI
 
     func listen() {
+        // Check permission state
+        if recordingState == .permissionDenied {
+            errorMessage = "Microphone or speech recognition permission denied. Please enable in Settings."
+            return
+        }
+
         do {
-            try speechService.startListening()
+            try speechService.startListening(for: selectedProjectId)
             activeListenSessionStartCount += 1
+
+            // Create a new listen session
+            currentSession = ListenSession(
+                id: UUID(),
+                projectId: selectedProjectId,
+                startedAt: Date(),
+                finishedAt: nil,
+                segments: [],
+                audioFileURL: nil,
+                projectSourceId: nil
+            )
+
+            recordingState = .listening
             mode = .listening
             transcriptionStatus = "Listening active"
             errorMessage = nil
@@ -235,10 +280,11 @@ final class ConversationViewModel: ObservableObject {
         let wasListening = mode == .listening
         aiTask?.cancel()
         aiTask = Task {
-            let latestTranscript = await finalizeCurrentTranscriptIfNeeded()
+            var audioURL: URL? = nil
             if wasListening {
-                speechService.stopListening()
+                audioURL = speechService.stopListening()
             }
+            let latestTranscript = await finalizeSession(audioURL: audioURL)
 
             let currentTranscript = latestTranscript ?? ""
             let context = AIGenerationContext(
@@ -250,6 +296,7 @@ final class ConversationViewModel: ObservableObject {
             )
 
             mode = .answering
+            recordingState = .answering
             transcriptionStatus = "Generating response"
             answerText = ""
 
@@ -268,11 +315,13 @@ final class ConversationViewModel: ObservableObject {
                     }
                 } else if !Task.isCancelled {
                     mode = .idle
+                    recordingState = .idle
                     transcriptionStatus = "Response ready"
                 }
             } catch {
                 if !Task.isCancelled {
                     mode = .idle
+                    recordingState = .idle
                     errorMessage = error.localizedDescription
                     transcriptionStatus = "Response failed"
                 }
@@ -283,12 +332,13 @@ final class ConversationViewModel: ObservableObject {
     func stop() {
         aiTask?.cancel()
         aiTask = nil
-        speechService.stopListening()
+        let audioURL = speechService.stopListening()
         mode = .idle
+        recordingState = .saving
         transcriptionStatus = "Listening stopped"
 
         Task {
-            _ = await finalizeCurrentTranscriptIfNeeded()
+            await finalizeSession(audioURL: audioURL)
         }
     }
 
@@ -299,40 +349,82 @@ final class ConversationViewModel: ObservableObject {
     }
 
     @discardableResult
-    private func finalizeCurrentTranscriptIfNeeded() async -> String? {
-        guard !selectedProjectId.isEmpty else { return nil }
+    private func finalizeSession(audioURL: URL?) async -> String? {
+        guard var session = currentSession else { return nil }
+        session.finishedAt = Date()
+        session.audioFileURL = audioURL
 
+        // Save transcript to project
+        let transcript: String?
         do {
-            let transcript = try await transcriptionService.finalizeTranscript(from: liveTranscript)
-            guard !transcript.isEmpty else {
-                transcriptionStatus = "No transcript captured"
-                return nil
-            }
+            transcript = try await transcriptionService.finalizeTranscript(from: liveTranscript)
+        } catch {
+            transcriptionStatus = "Transcription failed"
+            recordingState = .idle
+            currentSession = nil
+            return nil
+        }
 
-            if sessionLog.last?.text == transcript {
-                return transcript
-            }
+        guard let text = transcript, !text.isEmpty else {
+            transcriptionStatus = "No transcript captured"
+            recordingState = .idle
+            currentSession = nil
+            return nil
+        }
 
-            let formatter = DateFormatter()
-            formatter.dateFormat = "HH:mm:ss"
-            let entry = TranscriptEntry(timestamp: formatter.string(from: Date()), text: transcript)
-            sessionLog.append(entry)
+        // Add segment to session
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        let seg = ListenSegment(id: UUID(), timestamp: formatter.string(from: Date()), text: text)
+        session.segments.append(seg)
+        currentSession = session
 
+        // Also append to legacy sessionLog for transcript memory
+        let entry = TranscriptEntry(timestamp: formatter.string(from: Date()), text: text)
+        sessionLog.append(entry)
+
+        guard !selectedProjectId.isEmpty else {
+            allSessions.append(session)
+            recordingState = .idle
+            currentSession = nil
+            return text
+        }
+
+        // Save transcript as project source
+        do {
             let source = try await projectRepository.saveTranscript(
                 projectId: selectedProjectId,
                 title: makeTranscriptTitle(),
-                transcript: transcript,
-                token: session.accessToken
+                transcript: text,
+                token: self.session.accessToken
             )
             projectSources.insert(source, at: 0)
+            session.projectSourceId = source.sourceId
+
+            // Register audio asset with project (if we have a file)
+            if let url = audioURL {
+                let mimeType = "audio/x-caf"
+                _ = try? await projectRepository.saveAudioAsset(
+                    projectId: selectedProjectId,
+                    title: url.lastPathComponent,
+                    mimeType: mimeType,
+                    token: self.session.accessToken
+                )
+            }
+
+            allSessions.append(session)
             try await refreshContext()
             didUpdateContext = true
             transcriptionStatus = "Transcript saved"
-            return transcript
         } catch {
+            // Save failed — still record the session locally
+            allSessions.append(session)
             errorMessage = error.localizedDescription
-            transcriptionStatus = "Transcription failed"
-            return nil
+            transcriptionStatus = "Save failed"
         }
+
+        recordingState = .idle
+        currentSession = nil
+        return text
     }
 }

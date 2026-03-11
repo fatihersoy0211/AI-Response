@@ -1,5 +1,43 @@
 import Foundation
 
+// MARK: - Recording Session Models
+
+/// A complete record/listen cycle (start → stop)
+struct ListenSession: Identifiable, Equatable {
+    let id: UUID
+    let projectId: String
+    let startedAt: Date
+    var finishedAt: Date?
+    var segments: [ListenSegment]       // transcript sub-rounds within session
+    var audioFileURL: URL?              // local CAF audio file path
+    var projectSourceId: String?        // backend source ID after upload
+
+    var combinedTranscript: String {
+        segments.map(\.text).joined(separator: " ")
+    }
+
+    var formattedDuration: String {
+        guard let end = finishedAt else { return "–" }
+        let secs = Int(end.timeIntervalSince(startedAt))
+        return String(format: "%02d:%02d", secs / 60, secs % 60)
+    }
+}
+
+/// One transcribed sub-round within a session (SFSpeechRecognizer fires final every ~60s)
+struct ListenSegment: Identifiable, Equatable {
+    let id: UUID
+    let timestamp: String   // "HH:mm:ss"
+    let text: String
+}
+
+enum RecordingState: Equatable {
+    case idle
+    case listening          // mic active, transcribing
+    case answering          // AI streaming response
+    case saving             // uploading transcript/audio to project
+    case permissionDenied
+}
+
 struct AppleCredential {
     let userIdentifier: String
     let identityToken: String

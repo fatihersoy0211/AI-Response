@@ -22,7 +22,6 @@ struct LiveMeetingView: View {
     @State private var elapsedSeconds = 0
     @State private var sessionStart = Date()
     @State private var bookmarkCount = 0
-    @State private var waveActive = false
     private let ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     private var allowedFileTypes: [UTType] {
@@ -69,13 +68,6 @@ struct LiveMeetingView: View {
             if autoStartListening {
                 viewModel.listen()
                 sessionStart = Date()
-            }
-        }
-        .onChange(of: viewModel.mode) { _, newMode in
-            withAnimation(newMode == .listening
-                ? .easeInOut(duration: 0.5).repeatForever(autoreverses: true)
-                : .easeOut(duration: 0.3)) {
-                waveActive = newMode == .listening
             }
         }
         .onReceive(ticker) { _ in
@@ -151,6 +143,28 @@ struct LiveMeetingView: View {
                     .accessibilityIdentifier("contextUpdatedBadge")
             }
 
+            // Permission denied banner
+            if viewModel.recordingState == .permissionDenied {
+                HStack(spacing: DS.Spacing.x8) {
+                    Image(systemName: "mic.slash.fill")
+                        .foregroundStyle(DS.ColorToken.error)
+                    Text("Microphone permission denied. Enable in Settings.")
+                        .font(DS.Typography.caption)
+                        .foregroundStyle(DS.ColorToken.error)
+                    Spacer()
+                    Button("Settings") {
+                        if let url = URL(string: UIApplication.openSettingsURLString) {
+                            UIApplication.shared.open(url)
+                        }
+                    }
+                    .font(DS.Typography.caption)
+                    .foregroundStyle(DS.ColorToken.primary)
+                }
+                .padding(DS.Spacing.x12)
+                .background(DS.ColorToken.error.opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous))
+            }
+
             if viewModel.projects.isEmpty {
                 DSEmptyState(
                     icon: "folder.badge.plus",
@@ -203,30 +217,32 @@ struct LiveMeetingView: View {
                 .font(DS.Typography.displayLarge)
                 .foregroundStyle(DS.ColorToken.textPrimary)
 
+            // Live waveform — data-driven from real microphone RMS
             RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous)
                 .fill(DS.ColorToken.primarySoft)
                 .frame(height: 56)
                 .overlay {
                     HStack(spacing: DS.Spacing.x4) {
-                        ForEach(0..<36, id: \.self) { index in
+                        ForEach(Array(viewModel.audioLevelHistory.enumerated()), id: \.offset) { index, level in
+                            let height = max(8, CGFloat(level) * 44 + 4)
                             Capsule()
                                 .fill(index % 3 == 0 ? DS.ColorToken.primary : DS.ColorToken.aiAccent)
-                                .frame(width: 3, height: CGFloat((index % 8) + 8))
-                                .scaleEffect(
-                                    y: waveActive ? (index % 2 == 0 ? 2.8 : 1.6) : 1.0,
-                                    anchor: .center
-                                )
-                                .animation(
-                                    waveActive
-                                        ? .easeInOut(duration: 0.35 + Double(index % 6) * 0.05)
-                                            .repeatForever(autoreverses: true)
-                                            .delay(Double(index) * 0.025)
-                                        : .easeOut(duration: 0.2),
-                                    value: waveActive
-                                )
+                                .frame(width: 3, height: height)
+                                .animation(.easeOut(duration: 0.1), value: level)
                         }
                     }
                 }
+
+            // Session counter badge
+            if !viewModel.allSessions.isEmpty {
+                HStack(spacing: DS.Spacing.x4) {
+                    Image(systemName: "waveform.circle.fill")
+                        .foregroundStyle(DS.ColorToken.success)
+                    Text("\(viewModel.allSessions.count) session(s) saved")
+                        .font(DS.Typography.micro)
+                        .foregroundStyle(DS.ColorToken.success)
+                }
+            }
         }
         .padding(DS.Spacing.x16)
         .background(
@@ -258,24 +274,35 @@ struct LiveMeetingView: View {
         .dsCardStyle()
     }
 
-    // MARK: - Session Log (all previous rounds)
+    // MARK: - Session Log (recorded sessions with audio)
 
     @ViewBuilder
     private var sessionLogCard: some View {
-        if !viewModel.sessionLog.isEmpty {
+        if !viewModel.allSessions.isEmpty {
             VStack(alignment: .leading, spacing: DS.Spacing.x8) {
-                DSSectionHeader(title: "Session History – \(viewModel.sessionLog.count) round(s)")
-                ForEach(viewModel.sessionLog) { entry in
+                DSSectionHeader(title: "Recorded Sessions — \(viewModel.allSessions.count)")
+                ForEach(viewModel.allSessions) { session in
                     VStack(alignment: .leading, spacing: DS.Spacing.x4) {
-                        Text(entry.timestamp)
-                            .font(DS.Typography.micro)
-                            .foregroundStyle(DS.ColorToken.textTertiary)
-                        Text(entry.text)
-                            .font(DS.Typography.body)
+                        HStack {
+                            Image(systemName: session.audioFileURL != nil ? "waveform.circle.fill" : "text.bubble")
+                                .foregroundStyle(DS.ColorToken.primary)
+                            Text(session.startedAt, style: .time)
+                                .font(DS.Typography.caption)
+                                .foregroundStyle(DS.ColorToken.textTertiary)
+                            Spacer()
+                            Text(session.formattedDuration)
+                                .font(DS.Typography.micro)
+                                .foregroundStyle(DS.ColorToken.textTertiary)
+                            if session.projectSourceId != nil {
+                                DSBadge(text: "Saved", tone: DS.ColorToken.success)
+                            }
+                        }
+                        Text(session.combinedTranscript.isEmpty ? "(no transcript)" : session.combinedTranscript)
+                            .font(DS.Typography.caption)
                             .foregroundStyle(DS.ColorToken.textPrimary)
+                            .lineLimit(2)
                     }
                     .padding(DS.Spacing.x12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
                     .background(DS.ColorToken.surface)
                     .clipShape(RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous))
                 }
@@ -376,7 +403,7 @@ struct LiveMeetingView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: DS.Spacing.x16) {
 
-                    // ── Error banner ───────────────────────────────────
+                    // Error banner
                     if let error = viewModel.errorMessage {
                         HStack(spacing: DS.Spacing.x8) {
                             Image(systemName: "exclamationmark.triangle.fill")
@@ -391,7 +418,7 @@ struct LiveMeetingView: View {
                         .clipShape(RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous))
                     }
 
-                    // ── Select existing project ────────────────────────
+                    // Select existing project
                     if !viewModel.projects.isEmpty {
                         DSSectionHeader(title: "Switch Project")
                         VStack(spacing: DS.Spacing.x8) {
@@ -422,7 +449,7 @@ struct LiveMeetingView: View {
                         }
                     }
 
-                    // ── Saved sources ──────────────────────────────────
+                    // Saved sources
                     if !viewModel.projectSources.isEmpty {
                         DSSectionHeader(title: "Project Sources (\(viewModel.projectSources.count))")
                         ForEach(viewModel.projectSources) { source in
@@ -447,7 +474,7 @@ struct LiveMeetingView: View {
                         }
                     }
 
-                    // ── Create project ─────────────────────────────────
+                    // Create project
                     DSSectionHeader(title: "Create New Project")
                     HStack {
                         TextField("Project name", text: $viewModel.newProjectName)
@@ -467,7 +494,7 @@ struct LiveMeetingView: View {
                         .accessibilityIdentifier("saveProjectButton")
                     }
 
-                    // ── Analyze text ───────────────────────────────────
+                    // Analyze text
                     if !viewModel.selectedProjectId.isEmpty {
                         DSSectionHeader(title: "Add Text Source")
                         TextField("Source title", text: $viewModel.sourceTitle)
@@ -494,7 +521,7 @@ struct LiveMeetingView: View {
                             viewModel.uploadUserData()
                         }
 
-                        // ── Upload file ────────────────────────────────────
+                        // Upload file
                         DSSectionHeader(title: "Add File Source (PDF / DOCX / TXT)")
                         DSButton(title: "Select & Upload File", icon: "doc.badge.plus", kind: .secondary) {
                             isFileImporterPresented = true
@@ -514,7 +541,7 @@ struct LiveMeetingView: View {
                         }
                     }
 
-                    // ── Context summary ────────────────────────────────
+                    // Context summary
                     if !viewModel.selectedProjectId.isEmpty {
                         DSSectionHeader(title: "Project Context")
                         Text(viewModel.contextSummary)
