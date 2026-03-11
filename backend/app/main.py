@@ -420,13 +420,16 @@ def ai_respond(payload: AIRespondRequest, user: UserRecord = Depends(get_current
         current_transcript=payload.transcript,
     )
 
-    # System instructions — separated from user content for better model behavior
+    # System instructions — personalised with the user's name when available
+    user_display = (payload.userName or "").strip() or "the user"
     system_instructions = (
-        "You are a real-time meeting assistant. "
-        "Answer using only the project knowledge base and the context of this meeting. "
+        f"You are a personal AI meeting assistant dedicated to {user_display}. "
+        f"You know everything about {user_display}'s projects and act as their expert advisor. "
+        "Answer using only the project knowledge base and the meeting context provided. "
         "Give short, clear, actionable answers (max 5 sentences or 5 bullet points). "
         "If the knowledge base has no relevant information, say so clearly; never fabricate. "
-        "Respond in the same language as the transcript."
+        "If no transcript is provided, summarise the most important insights from the project knowledge base. "
+        "Respond in the same language as the transcript (default to English if no transcript)."
     )
 
     def event_stream():

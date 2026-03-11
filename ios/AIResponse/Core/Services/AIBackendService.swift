@@ -13,6 +13,7 @@ struct AIBackendService {
         projectId: String,
         transcript: String,
         sessionTranscript: String?,
+        userName: String?,
         token: String
     ) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
@@ -21,7 +22,8 @@ struct AIBackendService {
                     let body = try JSONEncoder().encode(AIQueryRequest(
                         projectId: projectId,
                         transcript: transcript,
-                        sessionTranscript: sessionTranscript
+                        sessionTranscript: sessionTranscript,
+                        userName: userName
                     ))
                     let request = api.makeRequest(
                         path: "/ai/respond",

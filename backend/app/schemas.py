@@ -71,6 +71,9 @@ class AppleAuthRequest(BaseModel):
 
 class AIRespondRequest(BaseModel):
     projectId: str = Field(min_length=1)
-    transcript: str = Field(min_length=1, max_length=10_000)
+    # transcript may be empty — AI will still respond from project context
+    transcript: str = Field(default="", max_length=10_000)
     # Accumulated transcript from the entire session (all previous rounds)
     sessionTranscript: str | None = Field(default=None, max_length=30_000)
+    # App user's display name — used to personalise the AI assistant's character
+    userName: str | None = Field(default=None, max_length=120)

@@ -51,7 +51,7 @@ struct MainTabView: View {
         .tint(DS.ColorToken.primary)
         .fullScreenCover(isPresented: $showLiveMeeting) {
             NavigationStack {
-                LiveMeetingView(session: session)
+                LiveMeetingView(session: session, autoStartListening: true)
             }
         }
     }

@@ -13,7 +13,7 @@ enum AppleSignInError: LocalizedError {
     case invalidCredential
 
     var errorDescription: String? {
-        "Apple kimlik bilgileri alınamadı"
+        "Apple credentials could not be retrieved"
     }
 }
 
@@ -55,6 +55,7 @@ struct AIQueryRequest: Codable {
     let transcript: String
     /// All previous transcript rounds accumulated in this session
     let sessionTranscript: String?
+    let userName: String?
 }
 
 struct AuthResponse: Codable {

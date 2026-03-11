@@ -11,6 +11,7 @@ struct ConversationView: View {
 
 struct LiveMeetingView: View {
     let session: UserSession
+    let autoStartListening: Bool
 
     @Environment(\.dismiss) private var dismiss
     @StateObject private var viewModel: ConversationViewModel
@@ -28,8 +29,9 @@ struct LiveMeetingView: View {
         return types
     }
 
-    init(session: UserSession) {
+    init(session: UserSession, autoStartListening: Bool = false) {
         self.session = session
+        self.autoStartListening = autoStartListening
         _viewModel = StateObject(wrappedValue: ConversationViewModel(session: session))
     }
 
@@ -52,6 +54,10 @@ struct LiveMeetingView: View {
         }
         .task {
             await viewModel.prepare()
+            if autoStartListening {
+                viewModel.listen()
+                sessionStart = Date()
+            }
         }
         .onReceive(ticker) { _ in
             if viewModel.mode != .idle {
@@ -302,10 +308,11 @@ struct LiveMeetingView: View {
                 viewModel.listen()
             }
             DSButton(
-                title: "Respond",
+                title: viewModel.mode == .answering ? "Answering…" : "Respond",
                 icon: "sparkles",
                 kind: .secondary,
-                isLoading: viewModel.mode == .answering
+                isLoading: viewModel.mode == .answering,
+                isDisabled: viewModel.selectedProjectId.isEmpty
             ) {
                 viewModel.respondAndListenAgain()
             }

@@ -223,19 +223,17 @@ final class ConversationViewModel: ObservableObject {
         guard !selectedProjectId.isEmpty else { errorMessage = "Please select a project first"; return }
 
         let capturedTranscript = liveTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !capturedTranscript.isEmpty else {
-            errorMessage = "Start listening first to generate a transcript"
-            return
-        }
 
-        // 1. Commit this round to the session log
+        // 1. Commit this round to the session log (skip if empty — context-only response)
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm:ss"
-        let entry = TranscriptEntry(timestamp: formatter.string(from: Date()), text: capturedTranscript)
-        sessionLog.append(entry)
+        if !capturedTranscript.isEmpty {
+            let entry = TranscriptEntry(timestamp: formatter.string(from: Date()), text: capturedTranscript)
+            sessionLog.append(entry)
+        }
 
         // 2. Build accumulated context from all PREVIOUS rounds (not current)
-        let previousRounds = sessionLog.dropLast()
+        let previousRounds = capturedTranscript.isEmpty ? sessionLog : sessionLog.dropLast()
         let accumulatedContext: String? = previousRounds.isEmpty
             ? nil
             : previousRounds.map { "[\($0.timestamp)] \($0.text)" }.joined(separator: "\n")
@@ -252,6 +250,7 @@ final class ConversationViewModel: ObservableObject {
                     projectId: selectedProjectId,
                     transcript: capturedTranscript,
                     sessionTranscript: accumulatedContext,
+                    userName: session.name,
                     token: session.accessToken
                 )
 
@@ -260,12 +259,14 @@ final class ConversationViewModel: ObservableObject {
                     answerText += chunk
                 }
 
-                // 3. Auto-start next listen round — only if not cancelled
-                if !Task.isCancelled {
+                // 3. Auto-start next listen round — only if transcript was captured and not cancelled
+                if !Task.isCancelled && !capturedTranscript.isEmpty {
                     try? await Task.sleep(nanoseconds: 300_000_000)
                     if !Task.isCancelled {
                         listen()
                     }
+                } else if !Task.isCancelled {
+                    mode = .idle
                 }
             } catch {
                 if !Task.isCancelled {
@@ -286,6 +287,10 @@ final class ConversationViewModel: ObservableObject {
 
         // Auto-save full session transcript to project knowledge base (background)
         let fullTranscript = sessionTranscript
+
+        // Clear session so a new Listen starts fresh
+        sessionLog = []
+        liveTranscript = ""
         guard !selectedProjectId.isEmpty, !fullTranscript.isEmpty else { return }
 
         let formatter = DateFormatter()
