@@ -42,7 +42,7 @@ final class AIChatViewModel: ObservableObject {
     @Published var errorMessage: String?
 
     private var allMessages: [String: [ChatMessage]] = [:]
-    private var contextSummaryByProject: [String: String] = [:]
+    private var contextSnapshotByProject: [String: ProjectContextSnapshot] = [:]
     private var streamTask: Task<Void, Never>?
 
     private let session: UserSession
@@ -76,10 +76,10 @@ final class AIChatViewModel: ObservableObject {
     }
 
     private func loadContext() async throws {
-        let ctx = try await projectRepository.fetchProjectContext(
+        let snapshot = try await projectRepository.fetchProjectContextSnapshot(
             projectId: selectedProjectId, token: session.accessToken
         )
-        contextSummaryByProject[selectedProjectId] = ctx.summary
+        contextSnapshotByProject[selectedProjectId] = snapshot
     }
 
     // MARK: Messaging
@@ -98,27 +98,21 @@ final class AIChatViewModel: ObservableObject {
         let assistantId = assistantMsg.id
         let projectId = selectedProjectId
 
-        // Build history (exclude the new streaming placeholder)
-        let history: [String] = currentMessages
-            .dropLast()                            // drop streaming placeholder
-            .dropLast()                            // drop the user msg we just added
-            .map { "\($0.role == .user ? "User" : "Assistant"): \($0.content)" }
+        // Build ChatTurn array for /ai/chat endpoint (excludes streaming placeholder)
+        let chatTurns: [ChatTurn] = currentMessages
+            .dropLast()   // drop streaming placeholder
+            .map { ChatTurn(role: $0.role == .user ? "user" : "assistant", content: $0.content) }
 
         streamTask?.cancel()
         streamTask = Task {
             isStreaming = true
-            let context = AIGenerationContext(
-                projectId: projectId,
-                projectName: projects.first(where: { $0.projectId == projectId })?.name ?? "Project",
-                projectContext: contextSummaryByProject[projectId] ?? "",
-                currentTranscript: text,
-                transcriptMemory: history,
-                userName: session.name,
-                persona: "Personal AI assistant for \(session.name)"
-            )
-
             do {
-                let stream = aiService.streamAnswer(context: context, token: session.accessToken)
+                let stream = aiService.streamChat(
+                    projectId: projectId,
+                    messages: chatTurns,
+                    userName: session.name,
+                    token: session.accessToken
+                )
                 for try await chunk in stream {
                     if Task.isCancelled { break }
                     patch(id: assistantId, projectId: projectId) { $0.content += chunk }

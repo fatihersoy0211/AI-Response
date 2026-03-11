@@ -82,9 +82,43 @@ class AIChatRequest(BaseModel):
 
 class AIRespondRequest(BaseModel):
     projectId: str = Field(min_length=1)
-    # transcript may be empty — AI will still respond from project context
-    transcript: str = Field(default="", max_length=10_000)
-    # Accumulated transcript from the entire session (all previous rounds)
-    sessionTranscript: str | None = Field(default=None, max_length=30_000)
-    # App user's display name — used to personalise the AI assistant's character
+    liveTranscript: str = Field(default="", max_length=10_000)
+    transcriptHistory: str | None = Field(default=None, max_length=30_000)
     userName: str | None = Field(default=None, max_length=120)
+
+
+# ---------------------------------------------------------------------------
+# New typed response models
+# ---------------------------------------------------------------------------
+
+class AudioAssetResponse(BaseModel):
+    assetId: str
+    title: str
+    mimeType: str
+    createdAtISO8601: str
+
+
+class SaveAudioAssetRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=160)
+    mimeType: str = Field(min_length=1, max_length=100)
+
+
+class SummaryResponse(BaseModel):
+    summaryId: str
+    style: str
+    content: str
+    generatedAtISO8601: str
+
+
+class SaveSummaryRequest(BaseModel):
+    style: str = Field(min_length=1, max_length=60)
+    content: str = Field(min_length=1, max_length=50_000)
+
+
+class ProjectContextSnapshotResponse(BaseModel):
+    projectName: str
+    documentContext: str
+    transcriptHistory: str
+    documents: list[SourceResponse]
+    transcripts: list[SourceResponse]
+    lastUpdatedISO8601: str

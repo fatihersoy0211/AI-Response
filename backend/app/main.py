@@ -16,13 +16,18 @@ from .schemas import (
     AIChatRequest,
     AIRespondRequest,
     AppleAuthRequest,
+    AudioAssetResponse,
     AuthResponse,
     LoginRequest,
     ProjectContextResponse,
+    ProjectContextSnapshotResponse,
     ProjectCreateRequest,
     ProjectResponse,
     RegisterRequest,
+    SaveAudioAssetRequest,
+    SaveSummaryRequest,
     SourceResponse,
+    SummaryResponse,
     TextSourceUploadRequest,
     TranscriptSaveRequest,
     UserProfileResponse,
@@ -31,7 +36,7 @@ from .store import JsonStore, UserRecord
 
 load_dotenv()
 
-app = FastAPI(title="AI Response API", version="0.4.0")
+app = FastAPI(title="AI Response API", version="0.5.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -152,32 +157,47 @@ def index_transcript(client: OpenAI, transcript: str) -> str:
         return "Transcript saved (indexing failed)."
 
 
-def build_respond_input(
-    context_summary: str,
-    session_transcript: str | None,
-    current_transcript: str,
+def build_respond_input_layered(
+    project_name: str,
+    document_context: str,
+    stored_transcript_history: str,
+    session_transcript_history: str | None,
+    live_transcript: str,
 ) -> str:
     """
-    Build the user-turn input for /ai/respond.
-    System instructions are passed separately via the `instructions` parameter.
-    Each section is clearly delimited and length-capped.
+    Assemble AI prompt in strict 4-layer order:
+    1. Project name (header)
+    2. Project documents & extracted text (uploaded files, text sources)
+    3. Historical transcripts (stored in DB + current session history)
+    4. Current live transcript (freshest — highest priority)
     """
-    ctx = context_summary[:_MAX_CONTEXT_CHARS]
-    cur = current_transcript.strip()[:_MAX_TRANSCRIPT_CHARS]
+    parts = [f"# Project: {project_name}"]
 
-    parts: list[str] = [
-        "## Project Knowledge Base",
-        ctx if ctx else "(No sources uploaded for this project yet.)",
+    # Layer 2: documents
+    if document_context.strip():
+        parts += ["", "## Project Knowledge Base (Documents & Uploaded Text)", document_context[:_MAX_CONTEXT_CHARS]]
+    else:
+        parts += ["", "## Project Knowledge Base", "(No documents uploaded yet — use live transcript only)"]
+
+    # Layer 3a: stored transcript history from DB
+    if stored_transcript_history.strip():
+        parts += ["", "## Historical Meeting Transcripts (from project)", stored_transcript_history[:_MAX_SESSION_CHARS // 2]]
+
+    # Layer 3b: current session history (from client)
+    if session_transcript_history and session_transcript_history.strip():
+        sess = session_transcript_history.strip()
+        if len(sess) > _MAX_SESSION_CHARS // 2:
+            sess = "...(earlier truncated)\n" + sess[-_MAX_SESSION_CHARS // 2:]
+        parts += ["", "## Current Session History", sess]
+
+    # Layer 4: live transcript (always last — freshest context)
+    live = live_transcript.strip()
+    parts += [
+        "",
+        "## Current Live Transcript (Freshest — Use As Primary Context)" if live
+        else "## Current Request",
+        live if live else "(No live transcript — respond from project knowledge base)",
     ]
-
-    if session_transcript and session_transcript.strip():
-        sess = session_transcript.strip()
-        # Keep only the most recent part if too long
-        if len(sess) > _MAX_SESSION_CHARS:
-            sess = "...(earlier conversation truncated)\n" + sess[-_MAX_SESSION_CHARS:]
-        parts += ["", "## Previous Conversation History This Meeting", sess]
-
-    parts += ["", "## Current Question / Transcript", cur]
 
     return "\n".join(parts)
 
@@ -405,24 +425,124 @@ def get_project_context(project_id: str, user: UserRecord = Depends(get_current_
     )
 
 
+@app.get("/projects/{project_id}/context/snapshot", response_model=ProjectContextSnapshotResponse)
+def get_project_context_snapshot(
+    project_id: str,
+    user: UserRecord = Depends(get_current_user),
+) -> ProjectContextSnapshotResponse:
+    try:
+        ctx = store.project_context_layered(user.user_id, project_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    def to_source_response(s: dict) -> SourceResponse:
+        return SourceResponse(
+            sourceId=s["source_id"],
+            sourceType=s["source_type"],
+            title=s["title"],
+            analysis=s["analysis"],
+            createdAtISO8601=s["created_at"],
+        )
+
+    return ProjectContextSnapshotResponse(
+        projectName=ctx["project_name"],
+        documentContext=ctx["document_context"],
+        transcriptHistory=ctx["transcript_history"],
+        documents=[to_source_response(d) for d in ctx["documents"]],
+        transcripts=[to_source_response(t) for t in ctx["transcripts"]],
+        lastUpdatedISO8601=ctx["last_updated"],
+    )
+
+
+@app.post("/projects/{project_id}/audio_assets", response_model=AudioAssetResponse)
+def save_audio_asset(
+    project_id: str,
+    payload: SaveAudioAssetRequest,
+    user: UserRecord = Depends(get_current_user),
+) -> AudioAssetResponse:
+    try:
+        asset = store.save_audio_asset(
+            user_id=user.user_id,
+            project_id=project_id,
+            title=payload.title,
+            mime_type=payload.mimeType,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    return AudioAssetResponse(
+        assetId=asset["asset_id"],
+        title=asset["title"],
+        mimeType=asset["mime_type"],
+        createdAtISO8601=asset["created_at"],
+    )
+
+
+@app.get("/projects/{project_id}/summaries", response_model=list[SummaryResponse])
+def list_summaries(
+    project_id: str,
+    user: UserRecord = Depends(get_current_user),
+) -> list[SummaryResponse]:
+    try:
+        summaries = store.list_project_summaries(user.user_id, project_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    return [
+        SummaryResponse(
+            summaryId=s["summary_id"],
+            style=s["style"],
+            content=s["content"],
+            generatedAtISO8601=s["generated_at"],
+        )
+        for s in summaries
+    ]
+
+
+@app.post("/projects/{project_id}/summaries", response_model=SummaryResponse)
+def save_summary(
+    project_id: str,
+    payload: SaveSummaryRequest,
+    user: UserRecord = Depends(get_current_user),
+) -> SummaryResponse:
+    try:
+        summary = store.save_project_summary(
+            user_id=user.user_id,
+            project_id=project_id,
+            style=payload.style,
+            content=payload.content,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    return SummaryResponse(
+        summaryId=summary["summary_id"],
+        style=summary["style"],
+        content=summary["content"],
+        generatedAtISO8601=summary["generated_at"],
+    )
+
+
 @app.post("/ai/respond")
 def ai_respond(payload: AIRespondRequest, user: UserRecord = Depends(get_current_user)):
     try:
-        context_summary, _, _ = store.project_context(user.user_id, payload.projectId)
+        ctx = store.project_context_layered(user.user_id, payload.projectId)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
     client = get_openai_client()
     model = _respond_model()
+    user_display = (payload.userName or "").strip() or "the user"
 
-    user_input = build_respond_input(
-        context_summary=context_summary,
-        session_transcript=payload.sessionTranscript,
-        current_transcript=payload.transcript,
+    user_input = build_respond_input_layered(
+        project_name=ctx["project_name"],
+        document_context=ctx["document_context"],
+        stored_transcript_history=ctx["transcript_history"],
+        session_transcript_history=payload.transcriptHistory,
+        live_transcript=payload.liveTranscript,
     )
 
     # System instructions — personalised with the user's name when available
-    user_display = (payload.userName or "").strip() or "the user"
     system_instructions = (
         f"You are a personal AI meeting assistant dedicated to {user_display}. "
         f"You know everything about {user_display}'s projects and act as their expert advisor. "
@@ -474,7 +594,7 @@ def ai_chat(payload: AIChatRequest, user: UserRecord = Depends(get_current_user)
     Each call receives the full conversation history so the model stays context-aware.
     """
     try:
-        context_summary, _, _ = store.project_context(user.user_id, payload.projectId)
+        ctx = store.project_context_layered(user.user_id, payload.projectId)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
@@ -490,8 +610,10 @@ def ai_chat(payload: AIChatRequest, user: UserRecord = Depends(get_current_user)
         "Respond in the same language as the user's latest message."
     )
 
-    # Build user input: project context + conversation history + current question
-    ctx = context_summary[:_MAX_CONTEXT_CHARS]
+    # Build user input: layered project context + conversation history + current question
+    doc_ctx = ctx["document_context"][:_MAX_CONTEXT_CHARS]
+    transcript_ctx = ctx["transcript_history"][:_MAX_SESSION_CHARS // 2]
+
     history_lines = []
     for msg in payload.messages[:-1]:   # all but the latest
         prefix = user_display if msg.role == "user" else "Assistant"
@@ -499,10 +621,20 @@ def ai_chat(payload: AIChatRequest, user: UserRecord = Depends(get_current_user)
 
     current_message = payload.messages[-1].content if payload.messages else ""
 
-    user_input = f"## Project Knowledge Base\n{ctx if ctx else '(No project data yet)'}"
+    user_input = f"# Project: {ctx['project_name']}\n\n"
+
+    if doc_ctx:
+        user_input += f"## Project Knowledge Base (Documents)\n{doc_ctx}\n\n"
+    else:
+        user_input += "## Project Knowledge Base\n(No documents uploaded yet)\n\n"
+
+    if transcript_ctx:
+        user_input += f"## Historical Meeting Transcripts\n{transcript_ctx}\n\n"
+
     if history_lines:
-        user_input += "\n\n## Conversation History\n" + "\n\n".join(history_lines)
-    user_input += f"\n\n## Current Message\n{current_message}"
+        user_input += "## Conversation History\n" + "\n\n".join(history_lines) + "\n\n"
+
+    user_input += f"## Current Message\n{current_message}"
 
     def event_stream():
         try:

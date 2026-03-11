@@ -10,7 +10,7 @@ final class AISummaryViewModel: ObservableObject {
             guard oldValue != selectedProjectId else { return }
             summaryText = ""
             errorMessage = nil
-            Task { await loadContextAndGenerate() }
+            Task { await generate() }
         }
     }
     @Published var summaryText: String = ""
@@ -22,7 +22,6 @@ final class AISummaryViewModel: ObservableObject {
     private let projectRepository: any ProjectRepository
     private let aiService: any AIResponseServicing
     private var streamTask: Task<Void, Never>?
-    private var contextByProject: [String: String] = [:]
 
     let styles = ["Executive", "Technical", "Casual", "Bullet Points"]
 
@@ -38,23 +37,8 @@ final class AISummaryViewModel: ObservableObject {
             if selectedProjectId.isEmpty, let first = projects.first {
                 selectedProjectId = first.projectId
             } else if !selectedProjectId.isEmpty {
-                await loadContextAndGenerate()
+                await generate()
             }
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    private func loadContextAndGenerate() async {
-        guard !selectedProjectId.isEmpty else { return }
-        do {
-            if contextByProject[selectedProjectId] == nil {
-                let ctx = try await projectRepository.fetchProjectContext(
-                    projectId: selectedProjectId, token: session.accessToken
-                )
-                contextByProject[selectedProjectId] = ctx.summary
-            }
-            await generate()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -68,7 +52,6 @@ final class AISummaryViewModel: ObservableObject {
         errorMessage = nil
 
         let projectName = projects.first(where: { $0.projectId == selectedProjectId })?.name ?? "Project"
-        let context = contextByProject[selectedProjectId] ?? ""
 
         let styleInstruction: String
         switch selectedStyle {
@@ -85,25 +68,23 @@ final class AISummaryViewModel: ObservableObject {
         let prompt = """
         Generate a comprehensive meeting summary in \(selectedStyle) style.
         \(styleInstruction)
-        
+
         Include the following sections:
         ## Executive Summary
         ## Key Discussion Points
         ## Action Items
         ## Risks & Blockers
         ## Follow-up Suggestions
-        
+
         Base everything strictly on the project knowledge base. Do not invent information.
         """
 
         let genContext = AIGenerationContext(
             projectId: selectedProjectId,
             projectName: projectName,
-            projectContext: context,
-            currentTranscript: prompt,
-            transcriptMemory: [],
-            userName: session.name,
-            persona: "AI Meeting Summarizer for \(session.name)"
+            transcriptHistory: [],
+            liveTranscript: prompt,
+            userName: session.name
         )
 
         streamTask = Task {

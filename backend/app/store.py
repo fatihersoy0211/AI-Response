@@ -176,6 +176,10 @@ class JsonStore:
                 "created_at": now,
                 "updated_at": now,
                 "sources": [],
+                "documents": [],
+                "transcripts": [],
+                "audio_assets": [],
+                "summaries": [],
             }
             projects.append(project)
             self._write(db)
@@ -188,6 +192,27 @@ class JsonStore:
                 if project["project_id"] == project_id:
                     return project
             return None
+
+    @staticmethod
+    def _split_sources(project: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """
+        Return (docs, transcripts) from typed subcollections.
+        Falls back to migrating old flat `sources` list for backward compatibility.
+        """
+        docs = project.get("documents", [])
+        transcripts = project.get("transcripts", [])
+
+        # Backward migration: classify any items still in the flat sources list
+        legacy_sources = project.get("sources", [])
+        if legacy_sources:
+            for src in legacy_sources:
+                src_type = src.get("source_type", "text")
+                if src_type == "transcript":
+                    transcripts = transcripts + [src]
+                else:
+                    docs = docs + [src]
+
+        return docs, transcripts
 
     def add_project_source(
         self,
@@ -214,7 +239,17 @@ class JsonStore:
                     "analysis": analysis[:5000],
                     "created_at": now,
                 }
+
+                # Route to typed subcollection
+                if source_type == "transcript":
+                    project.setdefault("transcripts", []).append(source)
+                else:
+                    # "text" or "file" → documents
+                    project.setdefault("documents", []).append(source)
+
+                # Keep legacy sources list in sync for backward compatibility
                 project.setdefault("sources", []).append(source)
+
                 project["updated_at"] = now
                 self._write(db)
                 return source
@@ -226,16 +261,120 @@ class JsonStore:
         if not project:
             raise ValueError("Project not found")
 
-        sources = project.get("sources", [])
-        if not sources:
+        docs, transcripts = self._split_sources(project)
+        all_sources = docs + transcripts
+
+        if not all_sources:
             return (
-                "Bu projeye henuz veri eklenmedi. Sorulari yalnizca canli konusma metnine gore cevapla.",
+                "No data has been added to this project yet. Respond based on the live transcript only.",
                 [],
                 project["updated_at"],
             )
 
         pieces = []
-        for src in sources[-20:]:
-            pieces.append(f"Kaynak: {src['title']} ({src['source_type']})\nAnaliz: {src['analysis']}")
+        for src in all_sources[-20:]:
+            pieces.append(f"Source: {src['title']} ({src['source_type']})\nAnalysis: {src['analysis']}")
         summary = "\n\n".join(pieces)
-        return summary[:12000], sources[-20:], project["updated_at"]
+        return summary[:12000], all_sources[-20:], project["updated_at"]
+
+    def project_context_layered(self, user_id: str, project_id: str) -> dict[str, Any]:
+        """
+        Return a typed, layered context snapshot for AI prompt assembly.
+
+        Returns a dict with keys:
+          project_name, document_context, transcript_history,
+          documents, transcripts, all_sources, last_updated
+        """
+        project = self.get_project(user_id, project_id)
+        if not project:
+            raise ValueError("Project not found")
+
+        docs, transcripts = self._split_sources(project)
+
+        # Layer 2: document analyses joined
+        doc_pieces = [
+            f"Document: {d['title']}\n{d['analysis']}"
+            for d in docs[-20:]
+        ]
+        document_context = "\n\n".join(doc_pieces)
+
+        # Layer 3: transcript analyses joined
+        transcript_pieces = [
+            f"Transcript: {t['title']}\n{t['analysis']}"
+            for t in transcripts[-20:]
+        ]
+        transcript_history = "\n\n".join(transcript_pieces)
+
+        all_sources = docs + transcripts
+
+        return {
+            "project_name": project["name"],
+            "document_context": document_context,
+            "transcript_history": transcript_history,
+            "documents": docs,
+            "transcripts": transcripts,
+            "all_sources": all_sources,
+            "last_updated": project["updated_at"],
+        }
+
+    def save_audio_asset(
+        self,
+        user_id: str,
+        project_id: str,
+        title: str,
+        mime_type: str,
+    ) -> dict[str, Any]:
+        with self._lock:
+            db = self._read()
+            projects = db["projects"].get(user_id, [])
+            for project in projects:
+                if project["project_id"] != project_id:
+                    continue
+
+                now = self._now()
+                asset = {
+                    "asset_id": str(uuid4()),
+                    "title": title.strip(),
+                    "mime_type": mime_type.strip(),
+                    "created_at": now,
+                }
+                project.setdefault("audio_assets", []).append(asset)
+                project["updated_at"] = now
+                self._write(db)
+                return asset
+
+        raise ValueError("Project not found")
+
+    def save_project_summary(
+        self,
+        user_id: str,
+        project_id: str,
+        style: str,
+        content: str,
+    ) -> dict[str, Any]:
+        with self._lock:
+            db = self._read()
+            projects = db["projects"].get(user_id, [])
+            for project in projects:
+                if project["project_id"] != project_id:
+                    continue
+
+                now = self._now()
+                summary = {
+                    "summary_id": str(uuid4()),
+                    "style": style.strip(),
+                    "content": content,
+                    "generated_at": now,
+                }
+                project.setdefault("summaries", []).append(summary)
+                project["updated_at"] = now
+                self._write(db)
+                return summary
+
+        raise ValueError("Project not found")
+
+    def list_project_summaries(self, user_id: str, project_id: str) -> list[dict[str, Any]]:
+        project = self.get_project(user_id, project_id)
+        if not project:
+            raise ValueError("Project not found")
+        return project.get("summaries", [])

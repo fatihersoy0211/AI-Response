@@ -49,14 +49,6 @@ final class ConversationViewModel: ObservableObject {
     private var aiTask: Task<Void, Never>?
     private var activeListenSessionStartCount = 0
 
-    var personaDescription: String {
-        let trimmedName = session.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmedName.isEmpty {
-            return "AI-Meeting Assist persona for the active project user"
-        }
-        return "AI-Meeting Assist persona derived from username \(trimmedName)"
-    }
-
     var transcriptMemory: [String] {
         sessionLog.map { "[\($0.timestamp)] \($0.text)" }
     }
@@ -252,11 +244,9 @@ final class ConversationViewModel: ObservableObject {
             let context = AIGenerationContext(
                 projectId: selectedProjectId,
                 projectName: projects.first(where: { $0.projectId == selectedProjectId })?.name ?? "Project",
-                projectContext: contextSummary,
-                currentTranscript: currentTranscript,
-                transcriptMemory: transcriptMemory,
-                userName: session.name,
-                persona: personaDescription
+                transcriptHistory: transcriptMemory,
+                liveTranscript: currentTranscript,
+                userName: session.name
             )
 
             mode = .answering

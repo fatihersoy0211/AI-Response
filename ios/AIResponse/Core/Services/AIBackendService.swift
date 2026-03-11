@@ -6,14 +6,20 @@ private struct SSEEventPayload: Decodable {
     let error: String?
 }
 
+private struct AIChatRequestBody: Codable {
+    let projectId: String
+    let messages: [ChatTurn]
+    let userName: String?
+}
+
 struct AIBackendService: AIResponseServicing {
     private let api = APIClient()
 
     func streamAnswer(context: AIGenerationContext, token: String) -> AsyncThrowingStream<String, Error> {
         streamAnswer(
             projectId: context.projectId,
-            transcript: context.currentTranscript,
-            sessionTranscript: context.combinedTranscriptMemory.isEmpty ? nil : context.combinedTranscriptMemory,
+            liveTranscript: context.liveTranscript,
+            transcriptHistory: context.combinedTranscriptHistory.isEmpty ? nil : context.combinedTranscriptHistory,
             userName: context.userName,
             token: token
         )
@@ -21,8 +27,8 @@ struct AIBackendService: AIResponseServicing {
 
     func streamAnswer(
         projectId: String,
-        transcript: String,
-        sessionTranscript: String?,
+        liveTranscript: String,
+        transcriptHistory: String?,
         userName: String?,
         token: String
     ) -> AsyncThrowingStream<String, Error> {
@@ -31,8 +37,8 @@ struct AIBackendService: AIResponseServicing {
                 do {
                     let body = try JSONEncoder().encode(AIQueryRequest(
                         projectId: projectId,
-                        transcript: transcript,
-                        sessionTranscript: sessionTranscript,
+                        liveTranscript: liveTranscript,
+                        transcriptHistory: transcriptHistory,
                         userName: userName
                     ))
                     let request = api.makeRequest(
@@ -95,6 +101,70 @@ struct AIBackendService: AIResponseServicing {
         }
     }
 
+    func streamChat(projectId: String, messages: [ChatTurn], userName: String?, token: String) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    let body = try JSONEncoder().encode(AIChatRequestBody(
+                        projectId: projectId,
+                        messages: messages,
+                        userName: userName
+                    ))
+                    let request = api.makeRequest(
+                        path: "/ai/chat",
+                        method: "POST",
+                        token: token,
+                        body: body,
+                        accept: "text/event-stream"
+                    )
+
+                    let (bytes, response) = try await api.streamSession.bytes(for: request)
+
+                    guard let http = response as? HTTPURLResponse else {
+                        throw APIError.invalidResponse
+                    }
+
+                    guard (200..<300).contains(http.statusCode) else {
+                        var errorData = Data()
+                        for try await byte in bytes { errorData.append(byte) }
+                        let detail = parseDetail(from: errorData)
+                        throw APIError.server(http.statusCode, detail)
+                    }
+
+                    for try await line in bytes.lines {
+                        guard line.hasPrefix("data:") else { continue }
+
+                        let raw = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
+                        guard !raw.isEmpty else { continue }
+
+                        if raw == "[DONE]" { break }
+
+                        let rawData = Data(raw.utf8)
+                        guard let payload = try? JSONDecoder().decode(SSEEventPayload.self, from: rawData) else {
+                            continue
+                        }
+
+                        if let errorMessage = payload.error, !errorMessage.isEmpty {
+                            throw NSError(
+                                domain: "AIBackendService",
+                                code: 1,
+                                userInfo: [NSLocalizedDescriptionKey: errorMessage]
+                            )
+                        }
+                        if payload.done == true { break }
+                        if let delta = payload.delta, !delta.isEmpty {
+                            continuation.yield(delta)
+                        }
+                    }
+
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+    }
+
     // FastAPI wraps errors as {"detail": "..."}
     private func parseDetail(from data: Data) -> String? {
         guard
@@ -129,6 +199,17 @@ final class MockAIService: AIResponseServicing {
     func streamAnswer(context: AIGenerationContext, token: String) -> AsyncThrowingStream<String, Error> {
         recordedContexts.append(context)
         return AsyncThrowingStream { continuation in
+            if let failureMessage {
+                continuation.finish(throwing: TestFailure.forced(failureMessage))
+                return
+            }
+            continuation.yield(responseText)
+            continuation.finish()
+        }
+    }
+
+    func streamChat(projectId: String, messages: [ChatTurn], userName: String?, token: String) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { continuation in
             if let failureMessage {
                 continuation.finish(throwing: TestFailure.forced(failureMessage))
                 return
