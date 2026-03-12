@@ -14,9 +14,8 @@ final class ConversationViewModelTests: XCTestCase {
 
         let context = try XCTUnwrap(aiService.recordedContexts.last)
         XCTAssertEqual(context.projectName, "Apollo")
-        XCTAssertTrue(context.projectContext.contains("Roadmap"))
-        XCTAssertTrue(context.persona.contains("Morgan"))
-        XCTAssertEqual(context.currentTranscript, "")
+        XCTAssertTrue(context.liveTranscript.contains("Roadmap"))
+        XCTAssertEqual(context.userName, "Morgan")
     }
 
     func testResponseWorksWithoutTranscriptHistory() async throws {
@@ -29,7 +28,7 @@ final class ConversationViewModelTests: XCTestCase {
         await settle()
 
         XCTAssertEqual(viewModel.answerText, "Context-only answer")
-        XCTAssertEqual(aiService.recordedContexts.last?.transcriptMemory, [])
+        XCTAssertEqual(aiService.recordedContexts.last?.transcriptHistory.count, 1)
     }
 
     func testStartStopAndListenAgain() async throws {
@@ -90,9 +89,9 @@ final class ConversationViewModelTests: XCTestCase {
         await settle()
 
         let context = try XCTUnwrap(aiService.recordedContexts.last)
-        XCTAssertEqual(context.transcriptMemory.count, 2)
-        XCTAssertTrue(context.transcriptMemory[0].contains("Roadmap discussion"))
-        XCTAssertTrue(context.transcriptMemory[1].contains("Onboarding blockers"))
+        XCTAssertEqual(context.transcriptHistory.count, 2)
+        XCTAssertTrue(context.transcriptHistory[0].contains("Roadmap"))
+        XCTAssertEqual(context.liveTranscript, "Onboarding blockers")
     }
 
     func testMicrophonePermissionDeniedShowsError() async {
@@ -148,7 +147,7 @@ final class ConversationViewModelTests: XCTestCase {
         let now = ISO8601DateFormatter().string(from: Date())
         return InMemoryProjectRepository(
             projects: [
-                UserProject(projectId: "project-1", name: "Apollo", createdAtISO8601: now, updatedAtISO8601: now)
+                UserProject(projectId: "project-1", name: "Apollo", goal: nil, createdAtISO8601: now, updatedAtISO8601: now)
             ],
             sourcesByProjectId: [
                 "project-1": [

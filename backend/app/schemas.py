@@ -116,9 +116,77 @@ class SaveSummaryRequest(BaseModel):
 
 
 class ProjectContextSnapshotResponse(BaseModel):
+    projectId: str
     projectName: str
     documentContext: str
     transcriptHistory: str
+    chatHistory: str
+    mergedText: str
     documents: list[SourceResponse]
     transcripts: list[SourceResponse]
     lastUpdatedISO8601: str
+
+
+# ---------------------------------------------------------------------------
+# Audio asset import
+# ---------------------------------------------------------------------------
+
+class ImportAudioAssetRequest(BaseModel):
+    fileName: str = Field(min_length=1, max_length=255)
+    mimeType: str = Field(min_length=1, max_length=100)
+    sourceType: str = Field(default="uploadedAudio", max_length=60)
+    durationSeconds: float | None = None
+    transcript: str | None = Field(default=None, max_length=100_000)
+
+
+class ImportAudioAssetResponse(BaseModel):
+    assetId: str
+    projectId: str
+    title: str
+    sourceType: str
+    mimeType: str
+    durationSeconds: float | None
+    transcriptionStatus: str
+    createdAtISO8601: str
+
+
+# ---------------------------------------------------------------------------
+# Chat turn persistence
+# ---------------------------------------------------------------------------
+
+class SaveChatTurnRequest(BaseModel):
+    role: str = Field(pattern="^(user|assistant)$")
+    content: str = Field(min_length=1, max_length=10_000)
+
+
+class ChatTurnResponse(BaseModel):
+    turnId: str
+    projectId: str
+    role: str
+    content: str
+    createdAtISO8601: str
+    turnIndex: int
+
+
+# ---------------------------------------------------------------------------
+# Project listing responses
+# ---------------------------------------------------------------------------
+
+class ProjectDocumentResponse(BaseModel):
+    sourceId: str
+    projectId: str
+    fileName: str
+    fileType: str
+    extractedText: str
+    extractionStatus: str
+    createdAtISO8601: str
+    updatedAtISO8601: str
+
+
+class ProjectTranscriptResponse(BaseModel):
+    sourceId: str
+    projectId: str
+    title: str
+    analysis: str
+    sourceType: str
+    createdAtISO8601: str

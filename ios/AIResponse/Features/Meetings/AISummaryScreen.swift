@@ -17,6 +17,7 @@ final class AISummaryViewModel: ObservableObject {
     @Published var isGenerating = false
     @Published var errorMessage: String?
     @Published var selectedStyle: String = "Executive"
+    @Published var lastUpdatedISO8601: String?
 
     private let session: UserSession
     private let projectRepository: any ProjectRepository
@@ -51,7 +52,18 @@ final class AISummaryViewModel: ObservableObject {
         isGenerating = true
         errorMessage = nil
 
-        let projectName = projects.first(where: { $0.projectId == selectedProjectId })?.name ?? "Project"
+        let context: AIGenerationContext
+        do {
+            context = try await projectRepository.buildAIGenerationContext(
+                projectId: selectedProjectId,
+                userName: session.name,
+                token: session.accessToken
+            )
+        } catch {
+            isGenerating = false
+            errorMessage = error.localizedDescription
+            return
+        }
 
         let styleInstruction: String
         switch selectedStyle {
@@ -80,11 +92,13 @@ final class AISummaryViewModel: ObservableObject {
         """
 
         let genContext = AIGenerationContext(
-            projectId: selectedProjectId,
-            projectName: projectName,
-            transcriptHistory: [],
-            liveTranscript: prompt,
-            userName: session.name
+            projectId: context.projectId,
+            projectName: context.projectName,
+            transcriptHistory: context.transcriptHistory,
+            liveTranscript: [prompt, context.liveTranscript]
+                .filter { !$0.isEmpty }
+                .joined(separator: "\n\n"),
+            userName: context.userName
         )
 
         streamTask = Task {
@@ -93,6 +107,15 @@ final class AISummaryViewModel: ObservableObject {
                 for try await chunk in stream {
                     if Task.isCancelled { break }
                     summaryText += chunk
+                }
+                if !Task.isCancelled, !summaryText.isEmpty {
+                    let saved = try await projectRepository.saveProjectSummary(
+                        projectId: selectedProjectId,
+                        style: selectedStyle,
+                        content: summaryText,
+                        token: session.accessToken
+                    )
+                    lastUpdatedISO8601 = saved.generatedAtISO8601
                 }
             } catch {
                 if !Task.isCancelled {
@@ -214,6 +237,11 @@ struct AISummaryScreen: View {
                     VStack(alignment: .leading, spacing: DS.Spacing.x8) {
                         HStack {
                             DSBadge(text: viewModel.selectedStyle, tone: DS.ColorToken.primary)
+                            if let lastUpdated = viewModel.lastUpdatedISO8601 {
+                                Text("Updated \(formattedTimestamp(lastUpdated))")
+                                    .font(DS.Typography.micro)
+                                    .foregroundStyle(DS.ColorToken.textTertiary)
+                            }
                             if viewModel.isGenerating {
                                 ProgressView().scaleEffect(0.7)
                             }
@@ -233,5 +261,11 @@ struct AISummaryScreen: View {
         .task {
             await viewModel.prepare()
         }
+    }
+
+    private func formattedTimestamp(_ iso8601: String) -> String {
+        let formatter = ISO8601DateFormatter()
+        guard let date = formatter.date(from: iso8601) else { return iso8601 }
+        return date.formatted(date: .abbreviated, time: .shortened)
     }
 }

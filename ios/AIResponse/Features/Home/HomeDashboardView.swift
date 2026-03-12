@@ -73,6 +73,7 @@ struct HomeDashboardView: View {
             UploadAudioSheet(
                 isPresented: $showUploadAudio,
                 session: session,
+                dependencies: dependencies,
                 projectRepository: dependencies.projectRepository,
                 projects: projects,
                 selectedProjectId: $uploadProjectId
@@ -128,6 +129,7 @@ private struct QuickActionAccessibilityModifier: ViewModifier {
 struct UploadAudioSheet: View {
     @Binding var isPresented: Bool
     let session: UserSession
+    let dependencies: AppDependencies
     let projectRepository: any ProjectRepository
     let projects: [UserProject]
     @Binding var selectedProjectId: String
@@ -137,6 +139,7 @@ struct UploadAudioSheet: View {
     @State private var uploadedURL: URL? = nil
     @State private var isUploading = false
     @State private var uploadError: String? = nil
+    @State private var uploadStatus: String? = nil
 
     private let allowedTypes: [UTType] = [
         .audio,
@@ -218,6 +221,13 @@ struct UploadAudioSheet: View {
                             .dsCardStyle()
                     }
 
+                    if let uploadStatus {
+                        Text(uploadStatus)
+                            .font(DS.Typography.caption)
+                            .foregroundStyle(DS.ColorToken.textSecondary)
+                            .dsCardStyle()
+                    }
+
                     DSButton(
                         title: uploadedFileName == nil ? "Choose Audio File" : "Change File",
                         icon: "doc.badge.plus",
@@ -265,6 +275,7 @@ struct UploadAudioSheet: View {
         guard let url = uploadedURL, !selectedProjectId.isEmpty else { return }
         isUploading = true
         uploadError = nil
+        uploadStatus = "Copying audio into project…"
         Task {
             do {
                 let access = url.startAccessingSecurityScopedResource()
@@ -279,20 +290,57 @@ struct UploadAudioSheet: View {
                 case "aac": mimeType = "audio/aac"
                 default:    mimeType = "audio/mpeg"
                 }
-                _ = try await projectRepository.uploadFileSource(
+
+                let storedURL = try storeImportedAudio(data: fileData, originalURL: url, projectId: selectedProjectId)
+                uploadStatus = "Transcribing uploaded audio…"
+                let transcriptText: String
+                do {
+                    transcriptText = try await dependencies.transcriptionService.transcribeAudioFile(at: storedURL)
+                } catch {
+                    _ = try await projectRepository.importAudioAsset(
+                        projectId: selectedProjectId,
+                        fileName: url.lastPathComponent,
+                        mimeType: mimeType,
+                        localFileURL: storedURL,
+                        durationSeconds: nil,
+                        sourceType: "uploadedAudio",
+                        transcript: nil,
+                        token: session.accessToken
+                    )
+                    throw error
+                }
+
+                _ = try await projectRepository.importAudioAsset(
                     projectId: selectedProjectId,
                     fileName: url.lastPathComponent,
                     mimeType: mimeType,
-                    fileData: fileData,
+                    localFileURL: storedURL,
+                    durationSeconds: nil,
+                    sourceType: "uploadedAudio",
+                    transcript: transcriptText,
                     token: session.accessToken
                 )
+                uploadStatus = "Transcript attached to selected project"
                 isUploading = false
                 isPresented = false
             } catch {
                 isUploading = false
                 uploadError = error.localizedDescription
+                uploadStatus = nil
             }
         }
+    }
+
+    private func storeImportedAudio(data: Data, originalURL: URL, projectId: String) throws -> URL {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let directory = docs
+            .appendingPathComponent("project-audio", isDirectory: true)
+            .appendingPathComponent(projectId, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let baseName = UUID().uuidString + "-" + originalURL.lastPathComponent
+        let destination = directory.appendingPathComponent(baseName)
+        try data.write(to: destination, options: [.atomic])
+        return destination
     }
 }
 

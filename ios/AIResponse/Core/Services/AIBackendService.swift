@@ -8,8 +8,13 @@ private struct SSEEventPayload: Decodable {
 
 private struct AIChatRequestBody: Codable {
     let projectId: String
-    let messages: [ChatTurn]
+    let messages: [AIChatMessagePayload]
     let userName: String?
+}
+
+private struct AIChatMessagePayload: Codable {
+    let role: String
+    let content: String
 }
 
 struct AIBackendService: AIResponseServicing {
@@ -107,7 +112,7 @@ struct AIBackendService: AIResponseServicing {
                 do {
                     let body = try JSONEncoder().encode(AIChatRequestBody(
                         projectId: projectId,
-                        messages: messages,
+                        messages: messages.map { AIChatMessagePayload(role: $0.role, content: $0.content) },
                         userName: userName
                     ))
                     let request = api.makeRequest(

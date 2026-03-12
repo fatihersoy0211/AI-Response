@@ -10,12 +10,12 @@ struct ChatMessage: Identifiable {
     var isStreaming: Bool
     let timestamp: Date
 
-    init(id: UUID = UUID(), role: ChatRole, content: String = "", isStreaming: Bool = false) {
+    init(id: UUID = UUID(), role: ChatRole, content: String = "", isStreaming: Bool = false, timestamp: Date = Date()) {
         self.id = id
         self.role = role
         self.content = content
         self.isStreaming = isStreaming
-        self.timestamp = Date()
+        self.timestamp = timestamp
     }
 }
 
@@ -32,8 +32,7 @@ final class AIChatViewModel: ObservableObject {
     @Published var selectedProjectId: String = "" {
         didSet {
             guard oldValue != selectedProjectId else { return }
-            currentMessages = allMessages[selectedProjectId] ?? []
-            Task { try? await loadContext() }
+            Task { await loadProjectMessages() }
         }
     }
     @Published var currentMessages: [ChatMessage] = []
@@ -41,8 +40,6 @@ final class AIChatViewModel: ObservableObject {
     @Published var isStreaming = false
     @Published var errorMessage: String?
 
-    private var allMessages: [String: [ChatMessage]] = [:]
-    private var contextSnapshotByProject: [String: ProjectContextSnapshot] = [:]
     private var streamTask: Task<Void, Never>?
 
     private let session: UserSession
@@ -68,18 +65,34 @@ final class AIChatViewModel: ObservableObject {
                 selectedProjectId = first.projectId
             }
             if !selectedProjectId.isEmpty {
-                try await loadContext()
+                await loadProjectMessages()
             }
         } catch {
             errorMessage = error.localizedDescription
         }
     }
 
-    private func loadContext() async throws {
-        let snapshot = try await projectRepository.fetchProjectContextSnapshot(
-            projectId: selectedProjectId, token: session.accessToken
-        )
-        contextSnapshotByProject[selectedProjectId] = snapshot
+    private func loadProjectMessages() async {
+        guard !selectedProjectId.isEmpty else {
+            currentMessages = []
+            return
+        }
+
+        do {
+            let turns = try await projectRepository.listChatTurns(projectId: selectedProjectId, token: session.accessToken)
+            let formatter = ISO8601DateFormatter()
+            currentMessages = turns.map {
+                ChatMessage(
+                    id: UUID(uuidString: $0.turnId) ?? UUID(),
+                    role: $0.role == "user" ? .user : .assistant,
+                    content: $0.content,
+                    isStreaming: false,
+                    timestamp: formatter.date(from: $0.createdAtISO8601) ?? Date()
+                )
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     // MARK: Messaging
@@ -89,38 +102,52 @@ final class AIChatViewModel: ObservableObject {
         guard !text.isEmpty, !selectedProjectId.isEmpty else { return }
 
         let userMsg = ChatMessage(role: .user, content: text)
-        append(userMsg, to: selectedProjectId)
+        currentMessages.append(userMsg)
         inputText = ""
 
-        // Placeholder streaming message
         let assistantMsg = ChatMessage(role: .assistant, isStreaming: true)
-        append(assistantMsg, to: selectedProjectId)
+        currentMessages.append(assistantMsg)
         let assistantId = assistantMsg.id
         let projectId = selectedProjectId
-
-        // Build ChatTurn array for /ai/chat endpoint (excludes streaming placeholder)
-        let chatTurns: [ChatTurn] = currentMessages
-            .dropLast()   // drop streaming placeholder
-            .map { ChatTurn(role: $0.role == .user ? "user" : "assistant", content: $0.content) }
 
         streamTask?.cancel()
         streamTask = Task {
             isStreaming = true
             do {
+                _ = try await projectRepository.saveChatTurn(
+                    projectId: projectId,
+                    role: "user",
+                    content: text,
+                    token: session.accessToken
+                )
+                let savedTurns = try await projectRepository.listChatTurns(
+                    projectId: projectId,
+                    token: session.accessToken
+                )
                 let stream = aiService.streamChat(
                     projectId: projectId,
-                    messages: chatTurns,
+                    messages: savedTurns,
                     userName: session.name,
                     token: session.accessToken
                 )
+                var assistantText = ""
                 for try await chunk in stream {
                     if Task.isCancelled { break }
-                    patch(id: assistantId, projectId: projectId) { $0.content += chunk }
+                    assistantText += chunk
+                    patch(id: assistantId) { $0.content += chunk }
                 }
-                patch(id: assistantId, projectId: projectId) { $0.isStreaming = false }
+                patch(id: assistantId) { $0.isStreaming = false }
+                if !assistantText.isEmpty {
+                    _ = try await projectRepository.saveChatTurn(
+                        projectId: projectId,
+                        role: "assistant",
+                        content: assistantText,
+                        token: session.accessToken
+                    )
+                }
             } catch {
                 if !Task.isCancelled {
-                    patch(id: assistantId, projectId: projectId) {
+                    patch(id: assistantId) {
                         $0.content = "Error: \(error.localizedDescription)"
                         $0.isStreaming = false
                     }
@@ -134,37 +161,31 @@ final class AIChatViewModel: ObservableObject {
         streamTask?.cancel()
         streamTask = nil
         isStreaming = false
-        // Mark last assistant message as done
-        if var msgs = allMessages[selectedProjectId],
-           let idx = msgs.indices.last, msgs[idx].role == .assistant {
-            msgs[idx].isStreaming = false
-            if msgs[idx].content.isEmpty { msgs[idx].content = "(cancelled)" }
-            allMessages[selectedProjectId] = msgs
-            currentMessages = msgs
+        if let idx = currentMessages.indices.last, currentMessages[idx].role == .assistant {
+            currentMessages[idx].isStreaming = false
+            if currentMessages[idx].content.isEmpty {
+                currentMessages[idx].content = "(cancelled)"
+            }
         }
     }
 
     func clearHistory() {
         stopStreaming()
-        allMessages[selectedProjectId] = []
-        currentMessages = []
+        Task {
+            do {
+                try await projectRepository.clearChatTurns(projectId: selectedProjectId, token: session.accessToken)
+                currentMessages = []
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
     }
 
     // MARK: Helpers
 
-    private func append(_ msg: ChatMessage, to projectId: String) {
-        var msgs = allMessages[projectId] ?? []
-        msgs.append(msg)
-        allMessages[projectId] = msgs
-        if projectId == selectedProjectId { currentMessages = msgs }
-    }
-
-    private func patch(id: UUID, projectId: String, update: (inout ChatMessage) -> Void) {
-        guard var msgs = allMessages[projectId],
-              let idx = msgs.firstIndex(where: { $0.id == id }) else { return }
-        update(&msgs[idx])
-        allMessages[projectId] = msgs
-        if projectId == selectedProjectId { currentMessages = msgs }
+    private func patch(id: UUID, update: (inout ChatMessage) -> Void) {
+        guard let idx = currentMessages.firstIndex(where: { $0.id == id }) else { return }
+        update(&currentMessages[idx])
     }
 }
 

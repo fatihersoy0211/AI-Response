@@ -64,6 +64,7 @@ struct UserSession: Codable {
 struct UserProject: Codable, Identifiable, Hashable {
     let projectId: String
     let name: String
+    let goal: String?
     let createdAtISO8601: String
     let updatedAtISO8601: String
 
@@ -90,42 +91,63 @@ struct ProjectContextSummary: Codable {
 
 struct ProjectDocument: Codable, Identifiable {
     let sourceId: String
-    let sourceType: String   // "text" or "file"
-    let title: String
-    let analysis: String
+    let projectId: String
+    let fileName: String
+    let fileType: String
+    let storedPath: String?
+    let extractedText: String
+    let extractionStatus: String
     let createdAtISO8601: String
+    let updatedAtISO8601: String
     var id: String { sourceId }
 }
 
 struct TranscriptSegment: Codable, Identifiable {
     let sourceId: String
+    let projectId: String
+    let sessionId: String?
+    let audioAssetId: String?
+    let sourceType: String
     let title: String
     let analysis: String
+    let segmentTimestampISO8601: String?
     let createdAtISO8601: String
+    let isFinal: Bool
+    let speakerLabel: String?
     var id: String { sourceId }
 }
 
 struct ProjectAudioAsset: Codable, Identifiable {
     let assetId: String
+    let projectId: String
     let title: String
+    let sourceType: String
     let mimeType: String
+    let storedPath: String?
+    let durationSeconds: TimeInterval?
     let createdAtISO8601: String
+    let transcriptionStatus: String
     var id: String { assetId }
 }
 
 struct ProjectSummary: Codable, Identifiable {
     let summaryId: String
+    let projectId: String
     let style: String
     let content: String
+    let sourceSnapshotHash: String?
     let generatedAtISO8601: String
     var id: String { summaryId }
 }
 
 /// Layered context snapshot — typed by source category for layered AI context assembly
 struct ProjectContextSnapshot: Codable {
+    let projectId: String
     let projectName: String
     let documentContext: String       // Layer 2: pre-assembled document analyses
     let transcriptHistory: String     // Layer 3: pre-assembled transcript analyses
+    let chatHistory: String
+    let mergedText: String
     let documents: [SourceItem]       // for display in knowledge sheet
     let transcripts: [SourceItem]     // for display in knowledge sheet
     let lastUpdatedISO8601: String
@@ -135,8 +157,12 @@ struct ProjectContextSnapshot: Codable {
 
 /// A single turn in an AI chat conversation
 struct ChatTurn: Codable, Equatable {
+    let turnId: String
+    let projectId: String
     let role: String   // "user" or "assistant"
     let content: String
+    let createdAtISO8601: String
+    let turnIndex: Int
 }
 
 // MARK: - AI request/context models
@@ -166,6 +192,7 @@ protocol SessionStoring {
 
 protocol TranscriptionServicing {
     func finalizeTranscript(from rawTranscript: String) async throws -> String
+    func transcribeAudioFile(at fileURL: URL) async throws -> String
 }
 
 protocol AIResponseServicing {
@@ -184,6 +211,23 @@ protocol ProjectRepository {
     func saveAudioAsset(projectId: String, title: String, mimeType: String, token: String) async throws -> ProjectAudioAsset
     func saveProjectSummary(projectId: String, style: String, content: String, token: String) async throws -> ProjectSummary
     func listProjectSummaries(projectId: String, token: String) async throws -> [ProjectSummary]
+    func listProjectDocuments(projectId: String, token: String) async throws -> [ProjectDocument]
+    func listProjectAudioAssets(projectId: String, token: String) async throws -> [ProjectAudioAsset]
+    func listProjectTranscripts(projectId: String, token: String) async throws -> [TranscriptSegment]
+    func importAudioAsset(
+        projectId: String,
+        fileName: String,
+        mimeType: String,
+        localFileURL: URL?,
+        durationSeconds: TimeInterval?,
+        sourceType: String,
+        transcript: String?,
+        token: String
+    ) async throws -> ProjectAudioAsset
+    func saveChatTurn(projectId: String, role: String, content: String, token: String) async throws -> ChatTurn
+    func listChatTurns(projectId: String, token: String) async throws -> [ChatTurn]
+    func clearChatTurns(projectId: String, token: String) async throws
+    func buildAIGenerationContext(projectId: String, userName: String?, token: String) async throws -> AIGenerationContext
 }
 
 // MARK: - AI Generation Context
@@ -200,6 +244,21 @@ struct AIGenerationContext: Equatable {
     var combinedTranscriptHistory: String {
         transcriptHistory.joined(separator: "\n")
     }
+}
+
+// MARK: - Transcript source type / transcription job status
+
+enum TranscriptSourceType: String, Codable {
+    case liveListening   = "liveListening"
+    case uploadedAudio   = "uploadedAudio"
+    case importedMeeting = "importedMeeting"
+}
+
+enum TranscriptionJobStatus: String, Codable {
+    case pending    = "pending"
+    case processing = "processing"
+    case completed  = "completed"
+    case failed     = "failed"
 }
 
 // MARK: - Utility

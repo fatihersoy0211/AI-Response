@@ -180,6 +180,7 @@ class JsonStore:
                 "transcripts": [],
                 "audio_assets": [],
                 "summaries": [],
+                "chat_turns": [],
             }
             projects.append(project)
             self._write(db)
@@ -282,8 +283,8 @@ class JsonStore:
         Return a typed, layered context snapshot for AI prompt assembly.
 
         Returns a dict with keys:
-          project_name, document_context, transcript_history,
-          documents, transcripts, all_sources, last_updated
+          project_id, project_name, document_context, transcript_history,
+          chat_history, merged_text, documents, transcripts, all_sources, last_updated
         """
         project = self.get_project(user_id, project_id)
         if not project:
@@ -305,17 +306,86 @@ class JsonStore:
         ]
         transcript_history = "\n\n".join(transcript_pieces)
 
+        # Chat history (last 20 turns)
+        chat_turns = project.get("chat_turns", [])[-20:]
+        chat_pieces = [
+            f"{'User' if t['role'] == 'user' else 'Assistant'}: {t['content']}"
+            for t in chat_turns
+        ]
+        chat_history = "\n".join(chat_pieces)
+
+        # merged_text: all source text concatenated (for snapshot display)
+        merged_parts = [project["name"], document_context, transcript_history]
+        merged_text = "\n\n".join(p for p in merged_parts if p.strip())
+
         all_sources = docs + transcripts
 
         return {
+            "project_id": project_id,
             "project_name": project["name"],
             "document_context": document_context,
             "transcript_history": transcript_history,
+            "chat_history": chat_history,
+            "merged_text": merged_text,
             "documents": docs,
             "transcripts": transcripts,
             "all_sources": all_sources,
             "last_updated": project["updated_at"],
         }
+
+    def import_audio_asset(
+        self,
+        user_id: str,
+        project_id: str,
+        file_name: str,
+        mime_type: str,
+        source_type: str,
+        duration_seconds: float | None,
+        transcript: str | None,
+        transcript_status: str,
+    ) -> dict[str, Any]:
+        """
+        Import an audio asset (uploaded or live-recorded) and optionally save its
+        transcript as a project source.  Returns the audio asset record.
+        """
+        with self._lock:
+            db = self._read()
+            projects = db["projects"].get(user_id, [])
+            for project in projects:
+                if project["project_id"] != project_id:
+                    continue
+
+                now = self._now()
+                asset = {
+                    "asset_id": str(uuid4()),
+                    "title": file_name.strip(),
+                    "mime_type": mime_type.strip(),
+                    "source_type": source_type,
+                    "duration_seconds": duration_seconds,
+                    "transcription_status": transcript_status,
+                    "created_at": now,
+                }
+                project.setdefault("audio_assets", []).append(asset)
+
+                # If a transcript was provided, persist it as a project source
+                if transcript and transcript.strip():
+                    transcript_source = {
+                        "source_id": str(uuid4()),
+                        "source_type": "transcript",
+                        "audio_source_type": source_type,
+                        "title": f"Transcript – {file_name}",
+                        "raw_text": transcript[:20000],
+                        "analysis": transcript[:5000],
+                        "created_at": now,
+                    }
+                    project.setdefault("transcripts", []).append(transcript_source)
+                    project.setdefault("sources", []).append(transcript_source)
+
+                project["updated_at"] = now
+                self._write(db)
+                return asset
+
+        raise ValueError("Project not found")
 
     def save_audio_asset(
         self,
@@ -378,3 +448,79 @@ class JsonStore:
         if not project:
             raise ValueError("Project not found")
         return project.get("summaries", [])
+
+    # ---------------------------------------------------------------------------
+    # Chat turn persistence
+    # ---------------------------------------------------------------------------
+
+    def save_chat_turn(
+        self,
+        user_id: str,
+        project_id: str,
+        role: str,
+        content: str,
+    ) -> dict[str, Any]:
+        with self._lock:
+            db = self._read()
+            projects = db["projects"].get(user_id, [])
+            for project in projects:
+                if project["project_id"] != project_id:
+                    continue
+
+                turns = project.setdefault("chat_turns", [])
+                now = self._now()
+                turn = {
+                    "turn_id": str(uuid4()),
+                    "project_id": project_id,
+                    "role": role,
+                    "content": content,
+                    "created_at": now,
+                    "turn_index": len(turns),
+                }
+                turns.append(turn)
+                project["updated_at"] = now
+                self._write(db)
+                return turn
+
+        raise ValueError("Project not found")
+
+    def list_chat_turns(self, user_id: str, project_id: str) -> list[dict[str, Any]]:
+        project = self.get_project(user_id, project_id)
+        if not project:
+            raise ValueError("Project not found")
+        return project.get("chat_turns", [])
+
+    def clear_chat_turns(self, user_id: str, project_id: str) -> None:
+        with self._lock:
+            db = self._read()
+            for project in db["projects"].get(user_id, []):
+                if project["project_id"] == project_id:
+                    project["chat_turns"] = []
+                    project["updated_at"] = self._now()
+                    self._write(db)
+                    return
+        raise ValueError("Project not found")
+
+    # ---------------------------------------------------------------------------
+    # Document / transcript / audio listing helpers
+    # ---------------------------------------------------------------------------
+
+    def list_project_documents(self, user_id: str, project_id: str) -> list[dict[str, Any]]:
+        project = self.get_project(user_id, project_id)
+        if not project:
+            raise ValueError("Project not found")
+        docs, _ = self._split_sources(project)
+        return docs
+
+    def list_project_transcripts(self, user_id: str, project_id: str) -> list[dict[str, Any]]:
+        project = self.get_project(user_id, project_id)
+        if not project:
+            raise ValueError("Project not found")
+        _, transcripts = self._split_sources(project)
+        return transcripts
+
+    def list_project_audio_assets(self, user_id: str, project_id: str) -> list[dict[str, Any]]:
+        project = self.get_project(user_id, project_id)
+        if not project:
+            raise ValueError("Project not found")
+        return project.get("audio_assets", [])

@@ -25,6 +25,9 @@ struct MeetingsCalendarView: View {
                 }
 
                 DSSectionHeader(title: mode == .daily ? "Today's Meetings" : "This Week's Meetings")
+                Text("Events are pulled from your device calendar.")
+                    .font(DS.Typography.micro)
+                    .foregroundStyle(DS.ColorToken.textSecondary)
 
                 let events = filteredEvents
                 if events.isEmpty {
@@ -141,12 +144,24 @@ struct MeetingsCalendarView: View {
                         .foregroundStyle(DS.ColorToken.textSecondary)
                         .lineLimit(1)
                 }
+                if let notes = event.notes, !notes.isEmpty {
+                    Text(notes)
+                        .font(DS.Typography.micro)
+                        .foregroundStyle(DS.ColorToken.textTertiary)
+                        .lineLimit(2)
+                }
+                if let conferenceLink = meetingURL(for: event) {
+                    Label(conferenceLink.host ?? conferenceLink.absoluteString, systemImage: "link")
+                        .font(DS.Typography.micro)
+                        .foregroundStyle(DS.ColorToken.primary)
+                        .lineLimit(1)
+                }
             }
 
             Spacer()
 
             Button {
-                openLiveMeeting()
+                joinMeeting(for: event)
             } label: {
                 Image(systemName: "mic.fill")
                     .font(.system(size: 14, weight: .semibold))
@@ -163,6 +178,52 @@ struct MeetingsCalendarView: View {
         let fmt = DateFormatter()
         fmt.timeStyle = .short
         return fmt.string(from: date)
+    }
+
+    private func joinMeeting(for event: EKEvent) {
+        if let link = meetingURL(for: event) {
+            openMeetingLink(link)
+            return
+        }
+        openLiveMeeting()
+    }
+
+    private func meetingURL(for event: EKEvent) -> URL? {
+        if let url = event.url {
+            return url
+        }
+        if let notes = event.notes {
+            let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
+            let range = NSRange(notes.startIndex..., in: notes)
+            return detector?.matches(in: notes, range: range)
+                .compactMap(\.url)
+                .first { isSupportedMeetingURL($0) }
+        }
+        return nil
+    }
+
+    private func openMeetingLink(_ url: URL) {
+        if let nativeURL = providerAwareURL(for: url), UIApplication.shared.canOpenURL(nativeURL) {
+            UIApplication.shared.open(nativeURL)
+        } else {
+            UIApplication.shared.open(url)
+        }
+    }
+
+    private func providerAwareURL(for url: URL) -> URL? {
+        let absolute = url.absoluteString
+        if absolute.contains("zoom.us") {
+            return URL(string: absolute.replacingOccurrences(of: "https://", with: "zoommtg://"))
+        }
+        if absolute.contains("teams.microsoft.com") {
+            return URL(string: absolute.replacingOccurrences(of: "https://", with: "msteams://"))
+        }
+        return nil
+    }
+
+    private func isSupportedMeetingURL(_ url: URL) -> Bool {
+        let host = url.host ?? ""
+        return host.contains("zoom.us") || host.contains("meet.google.com") || host.contains("teams.microsoft.com")
     }
 }
 

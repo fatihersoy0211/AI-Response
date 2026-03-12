@@ -182,6 +182,7 @@ struct LiveMeetingView: View {
                         }
                     }
                     .pickerStyle(.menu)
+                    .disabled(viewModel.recordingState == .listening)
                     .onChange(of: viewModel.selectedProjectId) { _, newValue in
                         viewModel.selectProject(newValue)
                     }

@@ -234,6 +234,46 @@ struct PassthroughTranscriptionService: TranscriptionServicing {
     func finalizeTranscript(from rawTranscript: String) async throws -> String {
         rawTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
     }
+
+    func transcribeAudioFile(at fileURL: URL) async throws -> String {
+        if let transcript = try await recognizeAudioFile(at: fileURL) {
+            return transcript
+        }
+        let data = try Data(contentsOf: fileURL)
+        if let text = String(data: data, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
+            return text
+        }
+        return fileURL.deletingPathExtension().lastPathComponent
+            .replacingOccurrences(of: "-", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func recognizeAudioFile(at fileURL: URL) async throws -> String? {
+        guard let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US")),
+              recognizer.isAvailable else {
+            return nil
+        }
+
+        return try await withCheckedThrowingContinuation { continuation in
+            let request = SFSpeechURLRecognitionRequest(url: fileURL)
+            request.shouldReportPartialResults = false
+
+            var resumed = false
+            recognizer.recognitionTask(with: request) { result, error in
+                if resumed { return }
+                if let error {
+                    resumed = true
+                    continuation.resume(throwing: error)
+                    return
+                }
+                if let result, result.isFinal {
+                    resumed = true
+                    continuation.resume(returning: result.bestTranscription.formattedString)
+                }
+            }
+        }
+    }
 }
 
 @MainActor
@@ -318,6 +358,14 @@ struct MockTranscriptionService: TranscriptionServicing {
             throw TestFailure.forced(failureMessage)
         }
         return (transcriptOverride ?? rawTranscript).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    func transcribeAudioFile(at fileURL: URL) async throws -> String {
+        if let failureMessage {
+            throw TestFailure.forced(failureMessage)
+        }
+        return (transcriptOverride ?? fileURL.deletingPathExtension().lastPathComponent)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 

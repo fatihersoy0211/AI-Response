@@ -18,13 +18,19 @@ from .schemas import (
     AppleAuthRequest,
     AudioAssetResponse,
     AuthResponse,
+    ChatTurnResponse,
+    ImportAudioAssetRequest,
+    ImportAudioAssetResponse,
     LoginRequest,
     ProjectContextResponse,
     ProjectContextSnapshotResponse,
     ProjectCreateRequest,
+    ProjectDocumentResponse,
     ProjectResponse,
+    ProjectTranscriptResponse,
     RegisterRequest,
     SaveAudioAssetRequest,
+    SaveChatTurnRequest,
     SaveSummaryRequest,
     SourceResponse,
     SummaryResponse,
@@ -445,9 +451,12 @@ def get_project_context_snapshot(
         )
 
     return ProjectContextSnapshotResponse(
+        projectId=ctx["project_id"],
         projectName=ctx["project_name"],
         documentContext=ctx["document_context"],
         transcriptHistory=ctx["transcript_history"],
+        chatHistory=ctx["chat_history"],
+        mergedText=ctx["merged_text"],
         documents=[to_source_response(d) for d in ctx["documents"]],
         transcripts=[to_source_response(t) for t in ctx["transcripts"]],
         lastUpdatedISO8601=ctx["last_updated"],
@@ -476,6 +485,169 @@ def save_audio_asset(
         mimeType=asset["mime_type"],
         createdAtISO8601=asset["created_at"],
     )
+
+
+@app.post("/projects/{project_id}/audio_assets/import", response_model=ImportAudioAssetResponse)
+def import_audio_asset(
+    project_id: str,
+    payload: ImportAudioAssetRequest,
+    user: UserRecord = Depends(get_current_user),
+) -> ImportAudioAssetResponse:
+    """
+    Import an audio asset with optional transcript.
+    If a transcript is provided it is automatically saved as a project source,
+    making it available in all future AI context builds for this project.
+    """
+    project = store.get_project(user.user_id, project_id)
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+
+    # If transcript provided, index it for better AI context
+    indexed_transcript = payload.transcript
+    if payload.transcript and payload.transcript.strip():
+        client = get_openai_client()
+        indexed_transcript = index_transcript(client, payload.transcript)
+
+    transcript_status = (
+        "completed" if payload.transcript and payload.transcript.strip() else "pending"
+    )
+
+    try:
+        asset = store.import_audio_asset(
+            user_id=user.user_id,
+            project_id=project_id,
+            file_name=payload.fileName,
+            mime_type=payload.mimeType,
+            source_type=payload.sourceType,
+            duration_seconds=payload.durationSeconds,
+            transcript=indexed_transcript,
+            transcript_status=transcript_status,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    return ImportAudioAssetResponse(
+        assetId=asset["asset_id"],
+        projectId=project_id,
+        title=asset["title"],
+        sourceType=asset["source_type"],
+        mimeType=asset["mime_type"],
+        durationSeconds=asset["duration_seconds"],
+        transcriptionStatus=asset["transcription_status"],
+        createdAtISO8601=asset["created_at"],
+    )
+
+
+@app.get("/projects/{project_id}/documents", response_model=list[ProjectDocumentResponse])
+def list_project_documents(
+    project_id: str,
+    user: UserRecord = Depends(get_current_user),
+) -> list[ProjectDocumentResponse]:
+    try:
+        docs = store.list_project_documents(user.user_id, project_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    return [
+        ProjectDocumentResponse(
+            sourceId=d["source_id"],
+            projectId=project_id,
+            fileName=d["title"],
+            fileType=d.get("source_type", "file"),
+            extractedText=d.get("raw_text", d.get("analysis", "")),
+            extractionStatus="completed",
+            createdAtISO8601=d["created_at"],
+            updatedAtISO8601=d["created_at"],
+        )
+        for d in docs
+    ]
+
+
+@app.get("/projects/{project_id}/transcripts", response_model=list[ProjectTranscriptResponse])
+def list_project_transcripts(
+    project_id: str,
+    user: UserRecord = Depends(get_current_user),
+) -> list[ProjectTranscriptResponse]:
+    try:
+        transcripts = store.list_project_transcripts(user.user_id, project_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    return [
+        ProjectTranscriptResponse(
+            sourceId=t["source_id"],
+            projectId=project_id,
+            title=t["title"],
+            analysis=t.get("analysis", ""),
+            sourceType=t.get("audio_source_type", t.get("source_type", "liveListening")),
+            createdAtISO8601=t["created_at"],
+        )
+        for t in transcripts
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Chat turn persistence
+# ---------------------------------------------------------------------------
+
+@app.get("/projects/{project_id}/chat", response_model=list[ChatTurnResponse])
+def list_chat_turns(
+    project_id: str,
+    user: UserRecord = Depends(get_current_user),
+) -> list[ChatTurnResponse]:
+    try:
+        turns = store.list_chat_turns(user.user_id, project_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    return [
+        ChatTurnResponse(
+            turnId=t["turn_id"],
+            projectId=t["project_id"],
+            role=t["role"],
+            content=t["content"],
+            createdAtISO8601=t["created_at"],
+            turnIndex=t["turn_index"],
+        )
+        for t in turns
+    ]
+
+
+@app.post("/projects/{project_id}/chat", response_model=ChatTurnResponse, status_code=status.HTTP_201_CREATED)
+def save_chat_turn(
+    project_id: str,
+    payload: SaveChatTurnRequest,
+    user: UserRecord = Depends(get_current_user),
+) -> ChatTurnResponse:
+    try:
+        turn = store.save_chat_turn(
+            user_id=user.user_id,
+            project_id=project_id,
+            role=payload.role,
+            content=payload.content,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    return ChatTurnResponse(
+        turnId=turn["turn_id"],
+        projectId=turn["project_id"],
+        role=turn["role"],
+        content=turn["content"],
+        createdAtISO8601=turn["created_at"],
+        turnIndex=turn["turn_index"],
+    )
+
+
+@app.delete("/projects/{project_id}/chat", status_code=status.HTTP_204_NO_CONTENT)
+def clear_chat_turns(
+    project_id: str,
+    user: UserRecord = Depends(get_current_user),
+) -> None:
+    try:
+        store.clear_chat_turns(user.user_id, project_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
 
 @app.get("/projects/{project_id}/summaries", response_model=list[SummaryResponse])

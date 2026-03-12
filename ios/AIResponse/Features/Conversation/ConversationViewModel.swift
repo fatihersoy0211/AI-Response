@@ -152,6 +152,10 @@ final class ConversationViewModel: ObservableObject {
 
     func selectProject(_ projectId: String) {
         guard projectId != selectedProjectId else { return }
+        guard recordingState != .listening else {
+            errorMessage = "Stop the current recording before switching projects."
+            return
+        }
         selectedProjectId = projectId
         sessionLog = []
         allSessions = []
@@ -285,14 +289,25 @@ final class ConversationViewModel: ObservableObject {
                 audioURL = speechService.stopListening()
             }
             let latestTranscript = await finalizeSession(audioURL: audioURL)
-
-            let currentTranscript = latestTranscript ?? ""
+            let baseContext: AIGenerationContext
+            do {
+                baseContext = try await projectRepository.buildAIGenerationContext(
+                    projectId: selectedProjectId,
+                    userName: session.name,
+                    token: session.accessToken
+                )
+            } catch {
+                mode = .idle
+                recordingState = .idle
+                errorMessage = error.localizedDescription
+                return
+            }
             let context = AIGenerationContext(
-                projectId: selectedProjectId,
-                projectName: projects.first(where: { $0.projectId == selectedProjectId })?.name ?? "Project",
-                transcriptHistory: transcriptMemory,
-                liveTranscript: currentTranscript,
-                userName: session.name
+                projectId: baseContext.projectId,
+                projectName: baseContext.projectName,
+                transcriptHistory: baseContext.transcriptHistory,
+                liveTranscript: latestTranscript ?? baseContext.liveTranscript,
+                userName: baseContext.userName
             )
 
             mode = .answering
@@ -330,6 +345,10 @@ final class ConversationViewModel: ObservableObject {
     }
 
     func stop() {
+        guard recordingState == .listening || mode == .listening else {
+            transcriptionStatus = "No active recording"
+            return
+        }
         aiTask?.cancel()
         aiTask = nil
         let audioURL = speechService.stopListening()
@@ -351,6 +370,7 @@ final class ConversationViewModel: ObservableObject {
     @discardableResult
     private func finalizeSession(audioURL: URL?) async -> String? {
         guard var session = currentSession else { return nil }
+        let projectId = session.projectId
         session.finishedAt = Date()
         session.audioFileURL = audioURL
 
@@ -383,7 +403,7 @@ final class ConversationViewModel: ObservableObject {
         let entry = TranscriptEntry(timestamp: formatter.string(from: Date()), text: text)
         sessionLog.append(entry)
 
-        guard !selectedProjectId.isEmpty else {
+        guard !projectId.isEmpty else {
             allSessions.append(session)
             recordingState = .idle
             currentSession = nil
@@ -393,7 +413,7 @@ final class ConversationViewModel: ObservableObject {
         // Save transcript as project source
         do {
             let source = try await projectRepository.saveTranscript(
-                projectId: selectedProjectId,
+                projectId: projectId,
                 title: makeTranscriptTitle(),
                 transcript: text,
                 token: self.session.accessToken
@@ -403,11 +423,14 @@ final class ConversationViewModel: ObservableObject {
 
             // Register audio asset with project (if we have a file)
             if let url = audioURL {
-                let mimeType = "audio/x-caf"
-                _ = try? await projectRepository.saveAudioAsset(
-                    projectId: selectedProjectId,
-                    title: url.lastPathComponent,
-                    mimeType: mimeType,
+                _ = try? await projectRepository.importAudioAsset(
+                    projectId: projectId,
+                    fileName: url.lastPathComponent,
+                    mimeType: "audio/x-caf",
+                    localFileURL: url,
+                    durationSeconds: session.finishedAt?.timeIntervalSince(session.startedAt),
+                    sourceType: "liveRecording",
+                    transcript: nil,
                     token: self.session.accessToken
                 )
             }
