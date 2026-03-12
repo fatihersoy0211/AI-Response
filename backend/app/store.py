@@ -173,6 +173,7 @@ class JsonStore:
             project = {
                 "project_id": str(uuid4()),
                 "name": name.strip(),
+                "manual_text": "",
                 "created_at": now,
                 "updated_at": now,
                 "sources": [],
@@ -257,6 +258,17 @@ class JsonStore:
 
         raise ValueError("Project not found")
 
+    def update_project_notes(self, user_id: str, project_id: str, text: str) -> dict[str, Any]:
+        with self._lock:
+            db = self._read()
+            for project in db["projects"].get(user_id, []):
+                if project["project_id"] == project_id:
+                    project["manual_text"] = text[:50000]
+                    project["updated_at"] = self._now()
+                    self._write(db)
+                    return project
+        raise ValueError("Project not found")
+
     def project_context(self, user_id: str, project_id: str) -> tuple[str, list[dict[str, Any]], str]:
         project = self.get_project(user_id, project_id)
         if not project:
@@ -292,6 +304,8 @@ class JsonStore:
 
         docs, transcripts = self._split_sources(project)
 
+        manual_text = project.get("manual_text", "").strip()
+
         # Layer 2: document analyses joined
         doc_pieces = [
             f"Document: {d['title']}\n{d['analysis']}"
@@ -315,7 +329,7 @@ class JsonStore:
         chat_history = "\n".join(chat_pieces)
 
         # merged_text: all source text concatenated (for snapshot display)
-        merged_parts = [project["name"], document_context, transcript_history]
+        merged_parts = [project["name"], manual_text, document_context, transcript_history]
         merged_text = "\n\n".join(p for p in merged_parts if p.strip())
 
         all_sources = docs + transcripts
@@ -323,6 +337,7 @@ class JsonStore:
         return {
             "project_id": project_id,
             "project_name": project["name"],
+            "manual_text": manual_text,
             "document_context": document_context,
             "transcript_history": transcript_history,
             "chat_history": chat_history,

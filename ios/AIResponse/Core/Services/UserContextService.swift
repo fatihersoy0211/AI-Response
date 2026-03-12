@@ -240,11 +240,16 @@ struct UserContextService: ProjectRepository {
         let latestTranscript = transcripts.last?.analysis ?? ""
         let olderTranscripts = transcripts.dropLast().map { "[\($0.title)] \($0.analysis)" }
 
+        let manualText = await Self.localStore.loadNotes(projectId: projectId)
+        let effectiveManualText = manualText.isEmpty ? snapshot.manualText : manualText
+
         let baseContext = [
             "Project: \(snapshot.projectName)",
-            snapshot.documentContext,
-            snapshot.chatHistory
+            effectiveManualText.isEmpty ? nil : "Project Background:\n\(effectiveManualText)",
+            snapshot.documentContext.isEmpty ? nil : snapshot.documentContext,
+            snapshot.chatHistory.isEmpty ? nil : snapshot.chatHistory
         ]
+        .compactMap { $0 }
         .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         .joined(separator: "\n\n")
 
@@ -267,6 +272,27 @@ struct UserContextService: ProjectRepository {
         )
     }
 
+    func saveProjectNotes(projectId: String, text: String, token: String) async throws -> UserProject {
+        let payload = ["manualText": text]
+        let body = try JSONSerialization.data(withJSONObject: payload)
+        let data = try? await api.request(
+            path: "/projects/\(projectId)/notes",
+            method: "PATCH",
+            token: token,
+            body: body
+        )
+        await Self.localStore.saveNotes(projectId: projectId, text: text)
+        if let data, let project = try? JSONDecoder().decode(UserProject.self, from: data) {
+            return project
+        }
+        // fallback local-only
+        return UserProject(projectId: projectId, name: "", goal: nil, manualText: text, createdAtISO8601: "", updatedAtISO8601: "")
+    }
+
+    func loadProjectNotes(projectId: String, token: String) async throws -> String {
+        await Self.localStore.loadNotes(projectId: projectId)
+    }
+
     private func fetchRemoteSnapshot(projectId: String, token: String) async throws -> ProjectContextSnapshot {
         let data = try await api.request(path: "/projects/\(projectId)/context/snapshot", token: token)
         return try JSONDecoder().decode(ProjectContextSnapshot.self, from: data)
@@ -281,6 +307,7 @@ actor InMemoryProjectRepository: ProjectRepository {
     private var summariesByProjectId: [String: [ProjectSummary]]
     private var chatTurnsByProjectId: [String: [ChatTurn]]
     private var sourceItemsByProjectId: [String: [SourceItem]]
+    private var notesByProjectId: [String: String] = [:]
 
     init(
         projects: [UserProject] = [],
@@ -322,6 +349,7 @@ actor InMemoryProjectRepository: ProjectRepository {
             projectId: projectId,
             name: launchConfiguration.preloadProjectName ?? "Sample Project",
             goal: nil,
+            manualText: nil,
             createdAtISO8601: now,
             updatedAtISO8601: now
         )
@@ -364,7 +392,7 @@ actor InMemoryProjectRepository: ProjectRepository {
 
     func createProject(name: String, token: String) async throws -> UserProject {
         let now = ISO8601DateFormatter().string(from: Date())
-        let project = UserProject(projectId: UUID().uuidString, name: name, goal: nil, createdAtISO8601: now, updatedAtISO8601: now)
+        let project = UserProject(projectId: UUID().uuidString, name: name, goal: nil, manualText: nil, createdAtISO8601: now, updatedAtISO8601: now)
         projects.insert(project, at: 0)
         return project
     }
@@ -455,6 +483,7 @@ actor InMemoryProjectRepository: ProjectRepository {
         return ProjectContextSnapshot(
             projectId: projectId,
             projectName: projectName,
+            manualText: "",
             documentContext: documentContext,
             transcriptHistory: transcriptHistory,
             chatHistory: chatHistory,
@@ -564,9 +593,15 @@ actor InMemoryProjectRepository: ProjectRepository {
         let transcripts = transcriptsByProjectId[projectId, default: []].sorted { $0.createdAtISO8601 < $1.createdAtISO8601 }
         let latestTranscript = transcripts.last?.analysis ?? ""
         let olderTranscripts = transcripts.dropLast().map { "\($0.title)\n\($0.analysis)" }
-        let baseContext = [snapshot.documentContext, snapshot.chatHistory]
-            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-            .joined(separator: "\n\n")
+        let notes = notesByProjectId[projectId] ?? ""
+        let baseContext = [
+            notes.isEmpty ? nil : "Project Background:\n\(notes)",
+            snapshot.documentContext.isEmpty ? nil : snapshot.documentContext,
+            snapshot.chatHistory.isEmpty ? nil : snapshot.chatHistory
+        ]
+        .compactMap { $0 }
+        .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        .joined(separator: "\n\n")
 
         return AIGenerationContext(
             projectId: projectId,
@@ -575,6 +610,15 @@ actor InMemoryProjectRepository: ProjectRepository {
             liveTranscript: latestTranscript.isEmpty ? baseContext : latestTranscript,
             userName: userName
         )
+    }
+
+    func saveProjectNotes(projectId: String, text: String, token: String) async throws -> UserProject {
+        notesByProjectId[projectId] = text
+        return projects.first(where: { $0.projectId == projectId }) ?? UserProject(projectId: projectId, name: "Project", goal: nil, manualText: text, createdAtISO8601: "", updatedAtISO8601: "")
+    }
+
+    func loadProjectNotes(projectId: String, token: String) async throws -> String {
+        notesByProjectId[projectId] ?? ""
     }
 
     func storedSourceTexts(projectId: String) -> [String] {
@@ -603,6 +647,7 @@ private actor ProjectScopedLocalStore {
         var audioAssetsByProjectId: [String: [ProjectAudioAsset]] = [:]
         var summariesByProjectId: [String: [ProjectSummary]] = [:]
         var chatTurnsByProjectId: [String: [ChatTurn]] = [:]
+        var notesByProjectId: [String: String] = [:]
     }
 
     private var state: PersistedState
@@ -723,6 +768,15 @@ private actor ProjectScopedLocalStore {
         persist()
     }
 
+    func saveNotes(projectId: String, text: String) {
+        state.notesByProjectId[projectId] = text
+        persist()
+    }
+
+    func loadNotes(projectId: String) -> String {
+        state.notesByProjectId[projectId] ?? ""
+    }
+
     func mergeSnapshot(projectId: String, remote: ProjectContextSnapshot?) -> ProjectContextSnapshot {
         let localDocuments = state.documentsByProjectId[projectId] ?? []
         let localTranscripts = state.transcriptsByProjectId[projectId] ?? []
@@ -774,8 +828,10 @@ private actor ProjectScopedLocalStore {
             .map { "\($0.role.capitalized): \($0.content)" }
             .joined(separator: "\n")
         let projectName = remote?.projectName ?? "Project"
+        let manualText = state.notesByProjectId[projectId] ?? remote?.manualText ?? ""
         let mergedText = [
             projectName,
+            manualText,
             documentContext.joined(separator: "\n\n"),
             transcriptContext.joined(separator: "\n\n"),
             chatHistory
@@ -786,6 +842,7 @@ private actor ProjectScopedLocalStore {
         return ProjectContextSnapshot(
             projectId: projectId,
             projectName: projectName,
+            manualText: manualText,
             documentContext: documentContext.joined(separator: "\n\n"),
             transcriptHistory: transcriptContext.joined(separator: "\n\n"),
             chatHistory: chatHistory,

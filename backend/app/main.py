@@ -26,6 +26,7 @@ from .schemas import (
     ProjectContextSnapshotResponse,
     ProjectCreateRequest,
     ProjectDocumentResponse,
+    ProjectNotesUpdateRequest,
     ProjectResponse,
     ProjectTranscriptResponse,
     RegisterRequest,
@@ -177,17 +178,23 @@ def build_respond_input_layered(
     stored_transcript_history: str,
     session_transcript_history: str | None,
     live_transcript: str,
+    manual_text: str = "",
 ) -> str:
     """
-    Assemble AI prompt in strict 4-layer order:
+    Assemble AI prompt in strict 5-layer order:
     1. Project name (header)
-    2. Project documents & extracted text (uploaded files, text sources)
-    3. Historical transcripts (stored in DB + current session history)
-    4. Current live transcript (freshest — highest priority)
+    2. Project Background (Manual Notes)
+    3. Project documents & extracted text (uploaded files, text sources)
+    4. Historical transcripts (stored in DB + current session history)
+    5. Current live transcript (freshest — highest priority)
     """
     parts = [f"# Project: {project_name}"]
 
-    # Layer 2: documents
+    # Layer 2: manual notes
+    if manual_text.strip():
+        parts += ["", "## Project Background (Manual Notes)", manual_text.strip()]
+
+    # Layer 3: documents
     if document_context.strip():
         parts += ["", "## Project Knowledge Base (Documents & Uploaded Text)", document_context[:_MAX_CONTEXT_CHARS]]
     else:
@@ -311,6 +318,7 @@ def list_projects(user: UserRecord = Depends(get_current_user)) -> list[ProjectR
         ProjectResponse(
             projectId=p["project_id"],
             name=p["name"],
+            manualText=p.get("manual_text", ""),
             createdAtISO8601=p["created_at"],
             updatedAtISO8601=p["updated_at"],
         )
@@ -324,6 +332,26 @@ def create_project(payload: ProjectCreateRequest, user: UserRecord = Depends(get
     return ProjectResponse(
         projectId=project["project_id"],
         name=project["name"],
+        manualText=project.get("manual_text", ""),
+        createdAtISO8601=project["created_at"],
+        updatedAtISO8601=project["updated_at"],
+    )
+
+
+@app.patch("/projects/{project_id}/notes", response_model=ProjectResponse)
+def update_project_notes(
+    project_id: str,
+    payload: ProjectNotesUpdateRequest,
+    user: UserRecord = Depends(get_current_user),
+) -> ProjectResponse:
+    try:
+        project = store.update_project_notes(user.user_id, project_id, payload.manualText)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return ProjectResponse(
+        projectId=project["project_id"],
+        name=project["name"],
+        manualText=project.get("manual_text", ""),
         createdAtISO8601=project["created_at"],
         updatedAtISO8601=project["updated_at"],
     )
@@ -461,6 +489,7 @@ def get_project_context_snapshot(
     return ProjectContextSnapshotResponse(
         projectId=ctx["project_id"],
         projectName=ctx["project_name"],
+        manualText=ctx.get("manual_text", ""),
         documentContext=ctx["document_context"],
         transcriptHistory=ctx["transcript_history"],
         chatHistory=ctx["chat_history"],
@@ -723,6 +752,7 @@ def ai_respond(
         stored_transcript_history=ctx["transcript_history"],
         session_transcript_history=payload.transcriptHistory,
         live_transcript=payload.liveTranscript,
+        manual_text=ctx.get("manual_text", ""),
     )
 
     # System instructions — personalised with the user's name when available
@@ -795,6 +825,7 @@ def ai_chat(
     )
 
     # Build user input: layered project context + conversation history + current question
+    manual_text = ctx.get("manual_text", "")
     doc_ctx = ctx["document_context"][:_MAX_CONTEXT_CHARS]
     transcript_ctx = ctx["transcript_history"][:_MAX_SESSION_CHARS // 2]
 
@@ -806,6 +837,9 @@ def ai_chat(
     current_message = payload.messages[-1].content if payload.messages else ""
 
     user_input = f"# Project: {ctx['project_name']}\n\n"
+
+    if manual_text.strip():
+        user_input += f"## Project Background (Manual Notes)\n{manual_text.strip()}\n\n"
 
     if doc_ctx:
         user_input += f"## Project Knowledge Base (Documents)\n{doc_ctx}\n\n"

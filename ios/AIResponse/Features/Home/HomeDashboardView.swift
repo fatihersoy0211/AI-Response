@@ -56,6 +56,43 @@ struct HomeDashboardView: View {
                     title: "No meetings yet",
                     message: "Start a recording or join a meeting to see it here."
                 )
+
+                DSSectionHeader(title: "My Projects")
+                if projects.isEmpty {
+                    DSEmptyState(
+                        icon: "folder.badge.plus",
+                        title: "No projects yet",
+                        message: "Create a project in the AI Chat tab."
+                    )
+                } else {
+                    VStack(spacing: DS.Spacing.x8) {
+                        ForEach(projects) { project in
+                            NavigationLink(destination: ProjectDetailView(project: project, session: session, dependencies: dependencies)) {
+                                HStack {
+                                    Image(systemName: "folder.fill")
+                                        .foregroundStyle(DS.ColorToken.primary)
+                                        .frame(width: 32)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(project.name)
+                                            .font(DS.Typography.bodyMedium)
+                                            .foregroundStyle(DS.ColorToken.textPrimary)
+                                        Text("Tap to view knowledge base")
+                                            .font(DS.Typography.caption)
+                                            .foregroundStyle(DS.ColorToken.textSecondary)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(DS.ColorToken.textTertiary)
+                                }
+                                .padding(DS.Spacing.x16)
+                                .background(DS.ColorToken.surface)
+                                .clipShape(RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous).stroke(DS.ColorToken.border, lineWidth: 1))
+                            }
+                        }
+                    }
+                }
             }
             .padding(DS.Spacing.x16)
         }

@@ -31,9 +31,14 @@ class ProjectCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=120)
 
 
+class ProjectNotesUpdateRequest(BaseModel):
+    manualText: str = Field(default="", max_length=50_000)
+
+
 class ProjectResponse(BaseModel):
     projectId: str
     name: str
+    manualText: str = ""
     createdAtISO8601: str
     updatedAtISO8601: str
 
@@ -118,6 +123,7 @@ class SaveSummaryRequest(BaseModel):
 class ProjectContextSnapshotResponse(BaseModel):
     projectId: str
     projectName: str
+    manualText: str = ""
     documentContext: str
     transcriptHistory: str
     chatHistory: str

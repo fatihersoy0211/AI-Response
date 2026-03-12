@@ -65,6 +65,7 @@ struct UserProject: Codable, Identifiable, Hashable {
     let projectId: String
     let name: String
     let goal: String?
+    let manualText: String?
     let createdAtISO8601: String
     let updatedAtISO8601: String
 
@@ -144,8 +145,9 @@ struct ProjectSummary: Codable, Identifiable {
 struct ProjectContextSnapshot: Codable {
     let projectId: String
     let projectName: String
-    let documentContext: String       // Layer 2: pre-assembled document analyses
-    let transcriptHistory: String     // Layer 3: pre-assembled transcript analyses
+    let manualText: String            // Layer 2: manual project notes/background
+    let documentContext: String       // Layer 3: pre-assembled document analyses
+    let transcriptHistory: String     // Layer 4: pre-assembled transcript analyses
     let chatHistory: String
     let mergedText: String
     let documents: [SourceItem]       // for display in knowledge sheet
@@ -228,6 +230,8 @@ protocol ProjectRepository {
     func listChatTurns(projectId: String, token: String) async throws -> [ChatTurn]
     func clearChatTurns(projectId: String, token: String) async throws
     func buildAIGenerationContext(projectId: String, userName: String?, token: String) async throws -> AIGenerationContext
+    func saveProjectNotes(projectId: String, text: String, token: String) async throws -> UserProject
+    func loadProjectNotes(projectId: String, token: String) async throws -> String
 }
 
 // MARK: - AI Generation Context

@@ -147,7 +147,7 @@ final class ConversationViewModelTests: XCTestCase {
         let now = ISO8601DateFormatter().string(from: Date())
         return InMemoryProjectRepository(
             projects: [
-                UserProject(projectId: "project-1", name: "Apollo", goal: nil, createdAtISO8601: now, updatedAtISO8601: now)
+                UserProject(projectId: "project-1", name: "Apollo", goal: nil, manualText: nil, createdAtISO8601: now, updatedAtISO8601: now)
             ],
             sourcesByProjectId: [
                 "project-1": [

@@ -21,6 +21,18 @@
     "o9IUgraRYosE2mEWbpJjC6XM1M2y2M7ZVkNTFh3D6SL-Keo4i8Bizb3Av8RysapO": {
       "user_id": "d45112ba-b4b8-43e6-9195-1a6c09df3265",
       "created_at": "2026-03-11T22:41:37.353533+00:00"
+    },
+    "5d3M84AQiXwo9Edw1glDb5B3fKYsCwc1nTLFmHvL38RXcmCpUN16eTDXHhRdi9sO": {
+      "user_id": "d45112ba-b4b8-43e6-9195-1a6c09df3265",
+      "created_at": "2026-03-12T08:21:37.454874+00:00"
+    },
+    "3nl8wk0RP0RJa_xNSfUHGKR5Fr_ADqkTpLbuYI0YiOIKDy9R33zMs31l29KPFbri": {
+      "user_id": "d45112ba-b4b8-43e6-9195-1a6c09df3265",
+      "created_at": "2026-03-12T08:32:06.739605+00:00"
+    },
+    "mIHxP_gqu5k_O_eTC58KXtvZ-yXyoruXnDkqqB5GhF9wncNeR7SGRBs_QBupAJ95": {
+      "user_id": "d45112ba-b4b8-43e6-9195-1a6c09df3265",
+      "created_at": "2026-03-12T08:45:33.325616+00:00"
     }
   },
   "projects": {
@@ -29,8 +41,201 @@
         "project_id": "193c1881-456a-44dc-ae1d-fa53ba3fc49d",
         "name": "Customer Meeting",
         "created_at": "2026-03-11T19:41:28.200195+00:00",
-        "updated_at": "2026-03-11T19:41:28.200195+00:00",
-        "sources": []
+        "updated_at": "2026-03-12T09:16:14.638049+00:00",
+        "sources": [
+          {
+            "source_id": "51e921df-1b1a-4755-b2f9-a7d93e9d6945",
+            "source_type": "transcript",
+            "title": "Meeting Transcript \u2013 12 Mar 09:56",
+            "raw_text": "K\u00fcbra \u015fimdi h\u0131z\u0131r m\u0131s\u0131r evet bilmiyorum ki ne kadar",
+            "analysis": "Transcript saved (indexing failed).",
+            "created_at": "2026-03-12T08:56:42.108912+00:00"
+          },
+          {
+            "source_id": "e175bdd6-0ad5-4622-b35c-9c366a7b8b0c",
+            "source_type": "transcript",
+            "title": "Meeting Transcript \u2013 12 Mar 09:56",
+            "raw_text": "K\u00fcbra \u015fimdi h\u0131z\u0131r m\u0131s\u0131r evet bilmiyorum ki ne kadar",
+            "analysis": "Transcript saved (indexing failed).",
+            "created_at": "2026-03-12T08:56:42.679871+00:00"
+          },
+          {
+            "source_id": "be5c8f26-9897-44af-ad73-fef4778ecf7e",
+            "source_type": "transcript",
+            "title": "Meeting Transcript \u2013 12 Mar 10:02",
+            "raw_text": "Kalbim y\u0131llar ge\u00e7sede Affetmeyecek bu konuda ne d\u00fc\u015f\u00fcn\u00fcyorsun",
+            "analysis": "\u2022 Konu\u015fmada, \"Kalbim y\u0131llar ge\u00e7se de affetmeyecek\" ifadesi kullan\u0131lm\u0131\u015ft\u0131r.  \n\u2022 Konu\u015fman\u0131n ana temas\u0131, affetmeme duygusudur.  \n\u2022 Kar\u015f\u0131 taraf\u0131n bu konuda ne d\u00fc\u015f\u00fcnd\u00fc\u011f\u00fc sorulmu\u015ftur.  \n\u2022 Karar veya eylem plan\u0131 belirtilmemi\u015ftir.  \n\u2022 Aksiyon maddesi yoktur.",
+            "created_at": "2026-03-12T09:02:14.359505+00:00"
+          },
+          {
+            "source_id": "1886f2ed-c302-4db0-9d84-bda88572631d",
+            "source_type": "transcript",
+            "title": "Meeting Transcript \u2013 12 Mar 10:03",
+            "raw_text": "Bak \u015fimdi \u015fimdi bu konuda ara\u015ft\u0131rmalar yapt\u0131k incelemeler sa\u011flad\u0131k bana Fatih teknik yeterliklerden bahsetsin Firewall nedir bunu anlats\u0131n",
+            "analysis": "\u2022 Ara\u015ft\u0131rmalar ve incelemeler yap\u0131ld\u0131.  \n\u2022 Fatih'ten teknik yeterlikler hakk\u0131nda bilgi verilmesi istendi.  \n\u2022 Fatih'ten firewall nedir, bunu a\u00e7\u0131klamas\u0131 talep edildi.",
+            "created_at": "2026-03-12T09:03:26.331127+00:00"
+          },
+          {
+            "source_id": "b135710a-c3bc-47e8-8c6b-b79e2f3dbc3c",
+            "source_type": "transcript",
+            "title": "Meeting Transcript \u2013 12 Mar 10:03",
+            "raw_text": "G\u00fcvenli\u011fi sa\u011flamak i\u00e7in gelen giden trafi\u011fi kontrol eden bir g\u00fcvenlik duvar\u0131d\u0131r trafik s\u00fcre alaca\u011f\u0131m i\u00e7eri halledece\u011fims konu\u015fuyorum amik ALIYON",
+            "analysis": "\u2022 G\u00fcvenli\u011fi sa\u011flamak amac\u0131yla gelen ve giden trafi\u011fi kontrol eden bir g\u00fcvenlik duvar\u0131 kurulacak.  \n\u2022 Trafik s\u00fcreleri ve i\u00e7erideki i\u015flemler takip edilecek.  \n\u2022 Konu\u015fmalar ve i\u015flemler amik ALIYON taraf\u0131ndan halledilecek.",
+            "created_at": "2026-03-12T09:03:52.278938+00:00"
+          },
+          {
+            "source_id": "89d484f0-30c7-4599-ba5b-7117369116b2",
+            "source_type": "transcript",
+            "title": "Meeting Transcript \u2013 12 Mar 10:04",
+            "raw_text": "Tekrar cevap veriyor konu\u015fuyorum ben konu\u015fuyorum respond diyorum tamam",
+            "analysis": "\u2022 Konu\u015fma s\u0131ras\u0131nda kar\u015f\u0131l\u0131kl\u0131 ileti\u015fim sa\u011flanmaya \u00e7al\u0131\u015f\u0131l\u0131yor.  \n\u2022 Kat\u0131l\u0131mc\u0131, konu\u015ftu\u011funu ve cevap vermesini istedi\u011fini belirtiyor.  \n\u2022 Net bir karar veya aksiyon maddesi belirtilmemi\u015ftir.",
+            "created_at": "2026-03-12T09:04:10.427875+00:00"
+          },
+          {
+            "source_id": "8a28afcc-649b-495d-a41c-2d2d9e71a3ce",
+            "source_type": "transcript",
+            "title": "Meeting Transcript \u2013 12 Mar 10:04",
+            "raw_text": "Tekrar cevap veriyor konu\u015fuyorum ben konu\u015fuyorum respond diyorum tamam",
+            "analysis": "\u2022 Konu\u015fma s\u0131ras\u0131nda kar\u015f\u0131l\u0131kl\u0131 ileti\u015fim sa\u011flanmaya \u00e7al\u0131\u015f\u0131l\u0131yor.  \n\u2022 \"Respond\" kelimesi kullan\u0131larak cevap verilmesi isteniyor.  \n\u2022 Kar\u015f\u0131 taraf\u0131n cevap vermesi bekleniyor, ileti\u015fim devam ediyor.  \n\nKarar:  \n\u2022 \u0130leti\u015fimin sa\u011flanmas\u0131 i\u00e7in kar\u015f\u0131l\u0131kl\u0131 cevap verilmesi kararla\u015ft\u0131r\u0131ld\u0131.  \n\nEylem Maddeleri:  \n\u2022 Konu\u015fan ki\u015fi, kar\u015f\u0131 taraf\u0131n cevap vermesini bekleyecek (anl\u0131k).  \n\u2022 Kar\u015f\u0131 taraf, \"respond\" komutuna uygun \u015fekilde cevap verecek (anl\u0131k).",
+            "created_at": "2026-03-12T09:04:10.641567+00:00"
+          },
+          {
+            "source_id": "6c8b2d3c-4d71-4389-bd4e-fcb32b79e2fc",
+            "source_type": "transcript",
+            "title": "Meeting Transcript \u2013 12 Mar 10:06",
+            "raw_text": "O anlam\u0131yorsun bunu a\u00e7t\u0131n tamam sen b\u0131rakacaks\u0131n e\u011fer ki bana t\u00fcm olarak yaz diyece\u011fim yani toplant\u0131 benim t\u00fcm senin verece\u011fin cevaplar olacak diyece\u011fim benim konu\u015fulmu\u015f gibi ben toplant\u0131ya girdim ayn\u0131s\u0131n\u0131 yapaca\u011f\u0131m toplant\u0131da \u00c7eviri yok bu asl\u0131nda cevap vermek i\u00e7in ben bu sanata melisam tamam toplant\u0131 i\u015fte Bana geldi\u011fini nereden biliyor biliyor musun \u015fu Response'a",
+            "analysis": "\u2022 Konu\u015fmac\u0131, toplant\u0131 s\u0131ras\u0131nda t\u00fcm cevaplar\u0131n kendisine ait olmas\u0131 gerekti\u011fini vurguluyor.  \n\u2022 Toplant\u0131da \u00e7eviri yap\u0131lmad\u0131\u011f\u0131n\u0131 belirtiyor.  \n\u2022 Toplant\u0131ya kat\u0131lan ki\u015finin, verilen cevaplar\u0131n kendisine ait oldu\u011funu bilmesi gerekti\u011fi ifade ediliyor.  \n\u2022 \"Response\" \u00fczerinden bilgi al\u0131nd\u0131\u011f\u0131na dair bir ifade ge\u00e7iyor.  \n\nKararlar:  \n\u2022 Toplant\u0131daki t\u00fcm cevaplar\u0131n tek bir ki\u015fi taraf\u0131ndan verilmesi kararla\u015ft\u0131r\u0131lm\u0131\u015f gibi g\u00f6r\u00fcn\u00fcyor.  \n\nEylem Maddeleri:  \n\u2022 Belirli bir ki\u015fi (konu\u015fmac\u0131) toplant\u0131daki t\u00fcm cevaplar\u0131 haz\u0131rlayacak ve verecek (zaman belirtilmemi\u015f).",
+            "created_at": "2026-03-12T09:06:44.704904+00:00"
+          },
+          {
+            "source_id": "78eb4f25-18a1-4a72-a181-e06786b0e4f4",
+            "source_type": "transcript",
+            "title": "Meeting Transcript \u2013 12 Mar 10:06",
+            "raw_text": "O anlam\u0131yorsun bunu a\u00e7t\u0131n tamam sen b\u0131rakacaks\u0131n e\u011fer ki bana t\u00fcm olarak yaz diyece\u011fim yani toplant\u0131 benim t\u00fcm senin verece\u011fin cevaplar olacak diyece\u011fim benim konu\u015fulmu\u015f gibi ben toplant\u0131ya girdim ayn\u0131s\u0131n\u0131 yapaca\u011f\u0131m toplant\u0131da \u00c7eviri yok bu asl\u0131nda cevap vermek i\u00e7in ben bu sanata melisam tamam toplant\u0131 i\u015fte",
+            "analysis": "\u2022 Konu\u015fmac\u0131, toplant\u0131 s\u0131ras\u0131nda t\u00fcm cevaplar\u0131n kendisi taraf\u0131ndan verilece\u011fini belirtiyor.  \n\u2022 Toplant\u0131da \u00e7eviri yap\u0131lmayaca\u011f\u0131 vurgulan\u0131yor.  \n\u2022 Konu\u015fmac\u0131, toplant\u0131ya kat\u0131ld\u0131\u011f\u0131nda ayn\u0131 \u015fekilde konu\u015faca\u011f\u0131n\u0131 ifade ediyor.  \n\u2022 Melisa'n\u0131n bu s\u00fcrece dahil oldu\u011fu anla\u015f\u0131l\u0131yor, ancak rol\u00fc net de\u011fil.  \n\u2022 Toplant\u0131n\u0131n tamamen konu\u015fmac\u0131n\u0131n kontrol\u00fcnde olaca\u011f\u0131 kararla\u015ft\u0131r\u0131lm\u0131\u015f gibi g\u00f6r\u00fcn\u00fcyor.",
+            "created_at": "2026-03-12T09:06:45.391457+00:00"
+          },
+          {
+            "source_id": "79ad9892-bb84-4fcd-bf99-5b5baddaf3b7",
+            "source_type": "transcript",
+            "title": "Meeting Transcript \u2013 12 Mar 10:08",
+            "raw_text": "Vard\u0131 gitmi\u015fti",
+            "analysis": "\u2022 No key points, decisions, or action items were discussed in the transcript provided.",
+            "created_at": "2026-03-12T09:08:09.368346+00:00"
+          },
+          {
+            "source_id": "cb0fb045-fe1e-4c1e-a3de-dd4821bc379f",
+            "source_type": "transcript",
+            "title": "Meeting Transcript \u2013 12 Mar 10:16",
+            "raw_text": "Mesela \u015fu anda konu\u015fuyorsun bunlar\u0131n hepsine \u015furada yaz\u0131yor ondan sonra sen buraya cevap girebiliyorsun bunlar\u0131n hepsinin arka planda yaz\u0131yor \u015fu cevaba basarsan da sana e\u011fer cevap haz\u0131rl\u0131yor",
+            "analysis": "\u2022 Konu\u015fma s\u0131ras\u0131nda t\u00fcm yaz\u0131lanlar ekranda g\u00f6r\u00fcnmekte.  \n\u2022 Kullan\u0131c\u0131, yaz\u0131lanlara cevap girebiliyor.  \n\u2022 Arka planda t\u00fcm yaz\u0131lanlar kaydediliyor.  \n\u2022 Cevap butonuna bas\u0131ld\u0131\u011f\u0131nda, sistem otomatik olarak cevap haz\u0131rl\u0131yor.",
+            "created_at": "2026-03-12T09:16:14.638049+00:00"
+          }
+        ],
+        "transcripts": [
+          {
+            "source_id": "51e921df-1b1a-4755-b2f9-a7d93e9d6945",
+            "source_type": "transcript",
+            "title": "Meeting Transcript \u2013 12 Mar 09:56",
+            "raw_text": "K\u00fcbra \u015fimdi h\u0131z\u0131r m\u0131s\u0131r evet bilmiyorum ki ne kadar",
+            "analysis": "Transcript saved (indexing failed).",
+            "created_at": "2026-03-12T08:56:42.108912+00:00"
+          },
+          {
+            "source_id": "e175bdd6-0ad5-4622-b35c-9c366a7b8b0c",
+            "source_type": "transcript",
+            "title": "Meeting Transcript \u2013 12 Mar 09:56",
+            "raw_text": "K\u00fcbra \u015fimdi h\u0131z\u0131r m\u0131s\u0131r evet bilmiyorum ki ne kadar",
+            "analysis": "Transcript saved (indexing failed).",
+            "created_at": "2026-03-12T08:56:42.679871+00:00"
+          },
+          {
+            "source_id": "be5c8f26-9897-44af-ad73-fef4778ecf7e",
+            "source_type": "transcript",
+            "title": "Meeting Transcript \u2013 12 Mar 10:02",
+            "raw_text": "Kalbim y\u0131llar ge\u00e7sede Affetmeyecek bu konuda ne d\u00fc\u015f\u00fcn\u00fcyorsun",
+            "analysis": "\u2022 Konu\u015fmada, \"Kalbim y\u0131llar ge\u00e7se de affetmeyecek\" ifadesi kullan\u0131lm\u0131\u015ft\u0131r.  \n\u2022 Konu\u015fman\u0131n ana temas\u0131, affetmeme duygusudur.  \n\u2022 Kar\u015f\u0131 taraf\u0131n bu konuda ne d\u00fc\u015f\u00fcnd\u00fc\u011f\u00fc sorulmu\u015ftur.  \n\u2022 Karar veya eylem plan\u0131 belirtilmemi\u015ftir.  \n\u2022 Aksiyon maddesi yoktur.",
+            "created_at": "2026-03-12T09:02:14.359505+00:00"
+          },
+          {
+            "source_id": "1886f2ed-c302-4db0-9d84-bda88572631d",
+            "source_type": "transcript",
+            "title": "Meeting Transcript \u2013 12 Mar 10:03",
+            "raw_text": "Bak \u015fimdi \u015fimdi bu konuda ara\u015ft\u0131rmalar yapt\u0131k incelemeler sa\u011flad\u0131k bana Fatih teknik yeterliklerden bahsetsin Firewall nedir bunu anlats\u0131n",
+            "analysis": "\u2022 Ara\u015ft\u0131rmalar ve incelemeler yap\u0131ld\u0131.  \n\u2022 Fatih'ten teknik yeterlikler hakk\u0131nda bilgi verilmesi istendi.  \n\u2022 Fatih'ten firewall nedir, bunu a\u00e7\u0131klamas\u0131 talep edildi.",
+            "created_at": "2026-03-12T09:03:26.331127+00:00"
+          },
+          {
+            "source_id": "b135710a-c3bc-47e8-8c6b-b79e2f3dbc3c",
+            "source_type": "transcript",
+            "title": "Meeting Transcript \u2013 12 Mar 10:03",
+            "raw_text": "G\u00fcvenli\u011fi sa\u011flamak i\u00e7in gelen giden trafi\u011fi kontrol eden bir g\u00fcvenlik duvar\u0131d\u0131r trafik s\u00fcre alaca\u011f\u0131m i\u00e7eri halledece\u011fims konu\u015fuyorum amik ALIYON",
+            "analysis": "\u2022 G\u00fcvenli\u011fi sa\u011flamak amac\u0131yla gelen ve giden trafi\u011fi kontrol eden bir g\u00fcvenlik duvar\u0131 kurulacak.  \n\u2022 Trafik s\u00fcreleri ve i\u00e7erideki i\u015flemler takip edilecek.  \n\u2022 Konu\u015fmalar ve i\u015flemler amik ALIYON taraf\u0131ndan halledilecek.",
+            "created_at": "2026-03-12T09:03:52.278938+00:00"
+          },
+          {
+            "source_id": "89d484f0-30c7-4599-ba5b-7117369116b2",
+            "source_type": "transcript",
+            "title": "Meeting Transcript \u2013 12 Mar 10:04",
+            "raw_text": "Tekrar cevap veriyor konu\u015fuyorum ben konu\u015fuyorum respond diyorum tamam",
+            "analysis": "\u2022 Konu\u015fma s\u0131ras\u0131nda kar\u015f\u0131l\u0131kl\u0131 ileti\u015fim sa\u011flanmaya \u00e7al\u0131\u015f\u0131l\u0131yor.  \n\u2022 Kat\u0131l\u0131mc\u0131, konu\u015ftu\u011funu ve cevap vermesini istedi\u011fini belirtiyor.  \n\u2022 Net bir karar veya aksiyon maddesi belirtilmemi\u015ftir.",
+            "created_at": "2026-03-12T09:04:10.427875+00:00"
+          },
+          {
+            "source_id": "8a28afcc-649b-495d-a41c-2d2d9e71a3ce",
+            "source_type": "transcript",
+            "title": "Meeting Transcript \u2013 12 Mar 10:04",
+            "raw_text": "Tekrar cevap veriyor konu\u015fuyorum ben konu\u015fuyorum respond diyorum tamam",
+            "analysis": "\u2022 Konu\u015fma s\u0131ras\u0131nda kar\u015f\u0131l\u0131kl\u0131 ileti\u015fim sa\u011flanmaya \u00e7al\u0131\u015f\u0131l\u0131yor.  \n\u2022 \"Respond\" kelimesi kullan\u0131larak cevap verilmesi isteniyor.  \n\u2022 Kar\u015f\u0131 taraf\u0131n cevap vermesi bekleniyor, ileti\u015fim devam ediyor.  \n\nKarar:  \n\u2022 \u0130leti\u015fimin sa\u011flanmas\u0131 i\u00e7in kar\u015f\u0131l\u0131kl\u0131 cevap verilmesi kararla\u015ft\u0131r\u0131ld\u0131.  \n\nEylem Maddeleri:  \n\u2022 Konu\u015fan ki\u015fi, kar\u015f\u0131 taraf\u0131n cevap vermesini bekleyecek (anl\u0131k).  \n\u2022 Kar\u015f\u0131 taraf, \"respond\" komutuna uygun \u015fekilde cevap verecek (anl\u0131k).",
+            "created_at": "2026-03-12T09:04:10.641567+00:00"
+          },
+          {
+            "source_id": "6c8b2d3c-4d71-4389-bd4e-fcb32b79e2fc",
+            "source_type": "transcript",
+            "title": "Meeting Transcript \u2013 12 Mar 10:06",
+            "raw_text": "O anlam\u0131yorsun bunu a\u00e7t\u0131n tamam sen b\u0131rakacaks\u0131n e\u011fer ki bana t\u00fcm olarak yaz diyece\u011fim yani toplant\u0131 benim t\u00fcm senin verece\u011fin cevaplar olacak diyece\u011fim benim konu\u015fulmu\u015f gibi ben toplant\u0131ya girdim ayn\u0131s\u0131n\u0131 yapaca\u011f\u0131m toplant\u0131da \u00c7eviri yok bu asl\u0131nda cevap vermek i\u00e7in ben bu sanata melisam tamam toplant\u0131 i\u015fte Bana geldi\u011fini nereden biliyor biliyor musun \u015fu Response'a",
+            "analysis": "\u2022 Konu\u015fmac\u0131, toplant\u0131 s\u0131ras\u0131nda t\u00fcm cevaplar\u0131n kendisine ait olmas\u0131 gerekti\u011fini vurguluyor.  \n\u2022 Toplant\u0131da \u00e7eviri yap\u0131lmad\u0131\u011f\u0131n\u0131 belirtiyor.  \n\u2022 Toplant\u0131ya kat\u0131lan ki\u015finin, verilen cevaplar\u0131n kendisine ait oldu\u011funu bilmesi gerekti\u011fi ifade ediliyor.  \n\u2022 \"Response\" \u00fczerinden bilgi al\u0131nd\u0131\u011f\u0131na dair bir ifade ge\u00e7iyor.  \n\nKararlar:  \n\u2022 Toplant\u0131daki t\u00fcm cevaplar\u0131n tek bir ki\u015fi taraf\u0131ndan verilmesi kararla\u015ft\u0131r\u0131lm\u0131\u015f gibi g\u00f6r\u00fcn\u00fcyor.  \n\nEylem Maddeleri:  \n\u2022 Belirli bir ki\u015fi (konu\u015fmac\u0131) toplant\u0131daki t\u00fcm cevaplar\u0131 haz\u0131rlayacak ve verecek (zaman belirtilmemi\u015f).",
+            "created_at": "2026-03-12T09:06:44.704904+00:00"
+          },
+          {
+            "source_id": "78eb4f25-18a1-4a72-a181-e06786b0e4f4",
+            "source_type": "transcript",
+            "title": "Meeting Transcript \u2013 12 Mar 10:06",
+            "raw_text": "O anlam\u0131yorsun bunu a\u00e7t\u0131n tamam sen b\u0131rakacaks\u0131n e\u011fer ki bana t\u00fcm olarak yaz diyece\u011fim yani toplant\u0131 benim t\u00fcm senin verece\u011fin cevaplar olacak diyece\u011fim benim konu\u015fulmu\u015f gibi ben toplant\u0131ya girdim ayn\u0131s\u0131n\u0131 yapaca\u011f\u0131m toplant\u0131da \u00c7eviri yok bu asl\u0131nda cevap vermek i\u00e7in ben bu sanata melisam tamam toplant\u0131 i\u015fte",
+            "analysis": "\u2022 Konu\u015fmac\u0131, toplant\u0131 s\u0131ras\u0131nda t\u00fcm cevaplar\u0131n kendisi taraf\u0131ndan verilece\u011fini belirtiyor.  \n\u2022 Toplant\u0131da \u00e7eviri yap\u0131lmayaca\u011f\u0131 vurgulan\u0131yor.  \n\u2022 Konu\u015fmac\u0131, toplant\u0131ya kat\u0131ld\u0131\u011f\u0131nda ayn\u0131 \u015fekilde konu\u015faca\u011f\u0131n\u0131 ifade ediyor.  \n\u2022 Melisa'n\u0131n bu s\u00fcrece dahil oldu\u011fu anla\u015f\u0131l\u0131yor, ancak rol\u00fc net de\u011fil.  \n\u2022 Toplant\u0131n\u0131n tamamen konu\u015fmac\u0131n\u0131n kontrol\u00fcnde olaca\u011f\u0131 kararla\u015ft\u0131r\u0131lm\u0131\u015f gibi g\u00f6r\u00fcn\u00fcyor.",
+            "created_at": "2026-03-12T09:06:45.391457+00:00"
+          },
+          {
+            "source_id": "79ad9892-bb84-4fcd-bf99-5b5baddaf3b7",
+            "source_type": "transcript",
+            "title": "Meeting Transcript \u2013 12 Mar 10:08",
+            "raw_text": "Vard\u0131 gitmi\u015fti",
+            "analysis": "\u2022 No key points, decisions, or action items were discussed in the transcript provided.",
+            "created_at": "2026-03-12T09:08:09.368346+00:00"
+          },
+          {
+            "source_id": "cb0fb045-fe1e-4c1e-a3de-dd4821bc379f",
+            "source_type": "transcript",
+            "title": "Meeting Transcript \u2013 12 Mar 10:16",
+            "raw_text": "Mesela \u015fu anda konu\u015fuyorsun bunlar\u0131n hepsine \u015furada yaz\u0131yor ondan sonra sen buraya cevap girebiliyorsun bunlar\u0131n hepsinin arka planda yaz\u0131yor \u015fu cevaba basarsan da sana e\u011fer cevap haz\u0131rl\u0131yor",
+            "analysis": "\u2022 Konu\u015fma s\u0131ras\u0131nda t\u00fcm yaz\u0131lanlar ekranda g\u00f6r\u00fcnmekte.  \n\u2022 Kullan\u0131c\u0131, yaz\u0131lanlara cevap girebiliyor.  \n\u2022 Arka planda t\u00fcm yaz\u0131lanlar kaydediliyor.  \n\u2022 Cevap butonuna bas\u0131ld\u0131\u011f\u0131nda, sistem otomatik olarak cevap haz\u0131rl\u0131yor.",
+            "created_at": "2026-03-12T09:16:14.638049+00:00"
+          }
+        ],
+        "summaries": [
+          {
+            "summary_id": "09060839-ec45-4f2e-b77f-858bc1ae7911",
+            "style": "Executive",
+            "content": "## Executive Summary  \nThe meeting focused on establishing communication protocols and clarifying roles during discussions. Key technical topics included firewall functionality for traffic control and security. It was agreed that all responses in meetings would be provided by a single designated speaker to maintain clarity and control. No final decisions on project direction or technical implementation were made.\n\n## Key Discussion Points  \n- Explanation and importance of firewall for monitoring incoming and outgoing traffic.  \n- Need for clear communication and response protocols during meetings.  \n- Agreement that one person (likely Fatih) will provide all answers in meetings without translation.  \n- Mention of Melisa\u2019s involvement, though her role remains unclear.  \n- Emotional theme of forgiveness was discussed but not linked to project actions.\n\n## Action Items  \n- Fatih to continue providing technical explanations as needed.  \n- Maintain single-speaker response protocol in future meetings.  \n- Await further clarification on Melisa\u2019s role and responsibilities.\n\n## Risks & Blockers  \n- Lack of clarity on Melisa\u2019s role may cause coordination issues.  \n- No concrete decisions or next steps defined yet, risking project momentum.\n\n## Follow-up Suggestions  \n- Define and document roles and responsibilities clearly, especially Melisa\u2019s involvement.  \n- Develop a detailed action plan for firewall implementation and security measures.  \n- Schedule a follow-up meeting to finalize decisions and assign tasks.",
+            "generated_at": "2026-03-12T09:10:12.108686+00:00"
+          },
+          {
+            "summary_id": "27868cd8-cc75-490a-ac88-617ff2701891",
+            "style": "Technical",
+            "content": "## Executive Summary  \nThe meeting focused on the implementation and explanation of a firewall system to ensure network security by controlling inbound and outbound traffic. Fatih provided technical insights about firewall functionalities. Communication protocols during the meeting were clarified, emphasizing that all responses would be centralized through a single speaker without translation services.\n\n## Key Discussion Points  \n- Firewall definition and its role in monitoring and controlling network traffic.  \n- The necessity of tracking traffic durations and internal processes for security purposes.  \n- Communication management during meetings, with a designated person responsible for all responses.  \n- The involvement of a participant named Melisa in the communication process, though her exact role remains unclear.\n\n## Action Items  \n- Fatih to provide detailed technical information regarding firewall capabilities and implementation.  \n- Ensure that all meeting responses are prepared and delivered by the designated speaker.  \n- Maintain real-time communication flow by awaiting and responding to prompts as agreed.\n\n## Risks & Blockers  \n- Lack of clarity on Melisa\u2019s role could cause communication inefficiencies.  \n- No formalized action plan or timeline for firewall deployment was established.  \n- Potential delays due to dependency on a single individual for all meeting responses.\n\n## Follow-up Suggestions  \n- Define and document Melisa\u2019s responsibilities within the communication workflow.  \n- Develop a detailed firewall implementation roadmap with milestones and deadlines.  \n- Consider backup communication protocols to mitigate risks associated with single-point response dependency.",
+            "generated_at": "2026-03-12T09:10:27.497596+00:00"
+          }
+        ]
       }
     ]
   }
