@@ -7,6 +7,7 @@ struct ProjectsTabView: View {
     let dependencies: AppDependencies
 
     @State private var projects: [UserProject] = []
+    @State private var searchText = ""
     @State private var isLoading = false
     @State private var showCreateProject = false
     @State private var newProjectName = ""
@@ -16,8 +17,25 @@ struct ProjectsTabView: View {
     @State private var projectToDelete: UserProject?
     @State private var showDeleteConfirm = false
 
+    private var filteredProjects: [UserProject] {
+        let trimmed = searchText.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return projects }
+        return projects.filter { project in
+            project.name.localizedCaseInsensitiveContains(trimmed)
+            || (project.goal?.localizedCaseInsensitiveContains(trimmed) == true)
+            || (project.manualText?.localizedCaseInsensitiveContains(trimmed) == true)
+        }
+    }
+
     var body: some View {
         List {
+            // Search bar
+            Section {
+                DSSearchBar(text: $searchText, placeholder: "Search projects…")
+                    .listRowInsets(EdgeInsets())
+            }
+            .listRowBackground(DS.ColorToken.canvas)
+
             if isLoading && projects.isEmpty {
                 HStack {
                     Spacer()
@@ -34,9 +52,18 @@ struct ProjectsTabView: View {
                     )
                 }
                 .listRowBackground(DS.ColorToken.canvas)
+            } else if filteredProjects.isEmpty {
+                Section {
+                    DSEmptyState(
+                        icon: "magnifyingglass",
+                        title: "No results",
+                        message: "No projects match \"\(searchText.trimmingCharacters(in: .whitespaces))\"."
+                    )
+                }
+                .listRowBackground(DS.ColorToken.canvas)
             } else {
                 Section {
-                    ForEach(projects) { project in
+                    ForEach(filteredProjects) { project in
                         NavigationLink(destination: ProjectDetailView(
                             project: project,
                             session: session,
@@ -56,7 +83,8 @@ struct ProjectsTabView: View {
                         }
                     }
                 } header: {
-                    Text("\(projects.count) project\(projects.count == 1 ? "" : "s")")
+                    let count = filteredProjects.count
+                    Text("\(count) project\(count == 1 ? "" : "s")\(searchText.trimmingCharacters(in: .whitespaces).isEmpty ? "" : " found")")
                         .font(DS.Typography.caption)
                         .foregroundStyle(DS.ColorToken.textSecondary)
                 }

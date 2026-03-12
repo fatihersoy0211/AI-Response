@@ -13,6 +13,15 @@ struct HomeDashboardView: View {
     @State private var projects: [UserProject] = []
     @State private var uploadProjectId: String = ""
 
+    private var filteredProjects: [UserProject] {
+        let trimmed = searchText.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return projects }
+        return projects.filter {
+            $0.name.localizedCaseInsensitiveContains(trimmed)
+            || ($0.goal?.localizedCaseInsensitiveContains(trimmed) == true)
+        }
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: DS.Spacing.x16) {
@@ -57,16 +66,22 @@ struct HomeDashboardView: View {
                     message: "Start a recording or join a meeting to see it here."
                 )
 
-                DSSectionHeader(title: "My Projects")
+                DSSectionHeader(title: searchText.trimmingCharacters(in: .whitespaces).isEmpty ? "My Projects" : "Projects")
                 if projects.isEmpty {
                     DSEmptyState(
                         icon: "folder.badge.plus",
                         title: "No projects yet",
-                        message: "Create a project in the AI Chat tab."
+                        message: "Go to the Projects tab to create your first project."
+                    )
+                } else if filteredProjects.isEmpty {
+                    DSEmptyState(
+                        icon: "magnifyingglass",
+                        title: "No results",
+                        message: "No projects match \"\(searchText.trimmingCharacters(in: .whitespaces))\"."
                     )
                 } else {
                     VStack(spacing: DS.Spacing.x8) {
-                        ForEach(projects) { project in
+                        ForEach(filteredProjects) { project in
                             NavigationLink(destination: ProjectDetailView(project: project, session: session, dependencies: dependencies)) {
                                 HStack {
                                     Image(systemName: "folder.fill")

@@ -794,14 +794,18 @@ def ai_respond(
         manual_text=ctx.get("manual_text", ""),
     )
 
-    # System instructions — personalised with the user's name when available
+    # System instructions — formal meeting speech style
     system_instructions = (
-        f"You are a personal AI meeting assistant dedicated to {user_display}. "
-        f"You know everything about {user_display}'s projects and act as their expert advisor. "
-        "Answer using only the project knowledge base and the meeting context provided. "
-        "Give short, clear, actionable answers (max 5 sentences or 5 bullet points). "
-        "If the knowledge base has no relevant information, say so clearly; never fabricate. "
-        "If no transcript is provided, summarise the most important insights from the project knowledge base. "
+        f"You are preparing a formal spoken statement for {user_display} to deliver in a professional meeting. "
+        "Your output must be a polished, meeting-ready spoken statement — not an explanation, not bullet points, not assistant-style text. "
+        "Write in formal, clear, professional spoken English. Use complete, well-formed sentences. "
+        "Structure the response so it flows naturally when spoken aloud in a meeting: "
+        "open with a clear statement that establishes the topic, deliver the key message in a formal spoken structure, and close naturally. "
+        "Draw only from the project knowledge base and meeting transcript provided. Never fabricate details not grounded in the project context. "
+        "Do not begin with phrases like 'Here is your response', 'Certainly', or 'Of course'. "
+        "Do not use bullet points. Do not use casual language. Do not reference being an AI. "
+        "Keep it concise enough to deliver comfortably in under sixty seconds of speaking. "
+        "If no transcript is provided, produce a formal project status statement from the stored project knowledge. "
         "Respond in the same language as the transcript (default to English if no transcript)."
     )
 
@@ -813,8 +817,8 @@ def ai_respond(
                     {"role": "system", "content": system_instructions},
                     {"role": "user", "content": user_input},
                 ],
-                temperature=0.2,
-                max_tokens=600,
+                temperature=0.25,
+                max_tokens=400,
                 stream=True,
             )
             for chunk in stream:
@@ -856,10 +860,12 @@ def ai_chat(
 
     user_display = (payload.userName or "").strip() or "the user"
     system_instructions = (
-        f"You are a personal AI meeting assistant dedicated to {user_display}. "
-        f"You know {user_display}'s project context thoroughly and act as their trusted advisor. "
-        "Answer ONLY from the project knowledge base provided. Never fabricate. "
-        "Be concise, clear, and actionable (max 5 sentences or 5 bullet points unless more depth is needed). "
+        f"You are a professional meeting assistant helping {user_display} with project-grounded responses. "
+        "Answer ONLY from the project knowledge base provided. Never fabricate details not present in the context. "
+        "Use formal, clear, professional language suitable for a corporate setting. "
+        "Write in complete sentences. Avoid casual wording, bullet points unless explicitly appropriate, and assistant-style prefaces. "
+        "Do not begin responses with 'Certainly', 'Of course', 'Here is', or similar filler phrases. "
+        "Do not reference being an AI. Be concise and direct. "
         "Respond in the same language as the user's latest message."
     )
 

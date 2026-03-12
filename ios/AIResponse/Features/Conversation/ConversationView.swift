@@ -339,30 +339,54 @@ struct LiveMeetingView: View {
     // MARK: - AI Answer
 
     private var aiAnswerCard: some View {
-        VStack(alignment: .leading, spacing: DS.Spacing.x8) {
-            DSSectionHeader(title: "AI Response")
-            if viewModel.mode == .answering && viewModel.answerText.isEmpty {
-                HStack(spacing: DS.Spacing.x8) {
+        VStack(alignment: .leading, spacing: DS.Spacing.x12) {
+            HStack(spacing: DS.Spacing.x8) {
+                Image(systemName: "mic.badge.plus")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(DS.ColorToken.primary)
+                Text("Meeting Statement")
+                    .font(DS.Typography.caption)
+                    .foregroundStyle(DS.ColorToken.textSecondary)
+                Spacer()
+                if viewModel.mode == .answering {
                     ProgressView()
-                    Text("Generating AI response…")
-                        .font(DS.Typography.caption)
-                        .foregroundStyle(DS.ColorToken.textSecondary)
+                        .scaleEffect(0.8)
                 }
-            } else {
-                Text(viewModel.answerText.isEmpty
-                     ? "AI response will appear here after tapping Respond."
-                     : viewModel.answerText)
+            }
+
+            if viewModel.mode == .answering && viewModel.answerText.isEmpty {
+                Text("Preparing statement…")
+                    .font(DS.Typography.caption)
+                    .foregroundStyle(DS.ColorToken.textSecondary)
+                    .italic()
+            } else if viewModel.answerText.isEmpty {
+                Text("Tap Respond to generate a meeting-ready statement from your project context.")
                     .font(DS.Typography.body)
+                    .foregroundStyle(DS.ColorToken.textTertiary)
+                    .italic()
+            } else {
+                Text(viewModel.answerText)
+                    .font(.system(.body, design: .serif))
                     .foregroundStyle(DS.ColorToken.textPrimary)
+                    .lineSpacing(6)
+                    .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("aiResponseText")
             }
+
             if let error = viewModel.errorMessage {
                 Text(error)
                     .font(DS.Typography.caption)
                     .foregroundStyle(DS.ColorToken.error)
             }
         }
-        .dsCardStyle()
+        .padding(DS.Spacing.x16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(DS.ColorToken.surface)
+        .clipShape(RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
+                .stroke(DS.ColorToken.primary.opacity(0.25), lineWidth: 1)
+        )
     }
 
     // MARK: - Controls
