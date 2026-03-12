@@ -600,6 +600,32 @@ struct PrivacySecurityScreen: View {
             }
             .listRowBackground(DS.ColorToken.surface)
 
+            Section {
+                NavigationLink(destination: APIKeyScreen()) {
+                    HStack {
+                        Image(systemName: "key.fill")
+                            .foregroundStyle(DS.ColorToken.primary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Custom OpenAI API Key")
+                                .font(DS.Typography.bodyMedium)
+                            Text(APIKeyKeychainStore.isSet ? "Key saved — tap to update" : "Not set — tap to add")
+                                .font(DS.Typography.caption)
+                                .foregroundStyle(APIKeyKeychainStore.isSet ? DS.ColorToken.success : DS.ColorToken.textSecondary)
+                        }
+                        Spacer()
+                        DSBadge(
+                            text: APIKeyKeychainStore.isSet ? "Active" : "Not set",
+                            tone: APIKeyKeychainStore.isSet ? DS.ColorToken.success : DS.ColorToken.textTertiary
+                        )
+                    }
+                }
+            } header: {
+                Text("AI Provider")
+            } footer: {
+                Text("Your key is stored securely in the iOS Keychain and sent only to your own backend server.")
+            }
+            .listRowBackground(DS.ColorToken.surface)
+
             Section("Data Management") {
                 NavigationLink("Export My Data") {
                     DataExportScreen()
@@ -618,6 +644,111 @@ struct PrivacySecurityScreen: View {
             Button("Delete", role: .destructive) {}
         } message: {
             Text("This will permanently delete all your meetings, transcripts, and summaries. This action cannot be undone.")
+        }
+    }
+}
+
+// MARK: - API Key Screen
+
+struct APIKeyScreen: View {
+    @State private var keyInput: String = ""
+    @State private var isSet: Bool = false
+    @State private var saved = false
+    @State private var showClearConfirm = false
+    @FocusState private var fieldFocused: Bool
+
+    var body: some View {
+        List {
+            Section {
+                HStack(spacing: DS.Spacing.x12) {
+                    Image(systemName: "key.fill")
+                        .font(.system(size: 28))
+                        .foregroundStyle(DS.ColorToken.primary)
+                        .frame(width: 44, height: 44)
+                        .background(DS.ColorToken.primarySoft)
+                        .clipShape(RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous))
+                    VStack(alignment: .leading, spacing: DS.Spacing.x4) {
+                        Text("OpenAI API Key")
+                            .font(DS.Typography.heading)
+                        Text(isSet ? "Key is active" : "No key configured")
+                            .font(DS.Typography.caption)
+                            .foregroundStyle(isSet ? DS.ColorToken.success : DS.ColorToken.textSecondary)
+                    }
+                    Spacer()
+                    DSBadge(
+                        text: isSet ? "Active" : "Not set",
+                        tone: isSet ? DS.ColorToken.success : DS.ColorToken.textTertiary
+                    )
+                }
+                .padding(.vertical, DS.Spacing.x4)
+            }
+            .listRowBackground(DS.ColorToken.surface)
+
+            Section {
+                SecureField("sk-...", text: $keyInput)
+                    .font(.system(.body, design: .monospaced))
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .focused($fieldFocused)
+            } header: {
+                Text("Enter API Key")
+            } footer: {
+                Text("Get your key at platform.openai.com/api-keys — a ChatGPT subscription is NOT an API key.")
+            }
+            .listRowBackground(DS.ColorToken.surface)
+
+            Section {
+                Button {
+                    let trimmed = keyInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmed.isEmpty else { return }
+                    APIKeyKeychainStore.save(trimmed)
+                    isSet = true
+                    keyInput = ""
+                    fieldFocused = false
+                    withAnimation { saved = true }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                        withAnimation { saved = false }
+                    }
+                } label: {
+                    HStack {
+                        Spacer()
+                        if saved {
+                            Label("Saved to Keychain", systemImage: "checkmark.circle.fill")
+                                .foregroundStyle(DS.ColorToken.success)
+                        } else {
+                            Text("Save Key")
+                                .font(DS.Typography.bodyMedium)
+                                .foregroundStyle(keyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                    ? DS.ColorToken.textTertiary : DS.ColorToken.primary)
+                        }
+                        Spacer()
+                    }
+                }
+                .disabled(keyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            .listRowBackground(DS.ColorToken.surface)
+
+            if isSet {
+                Section {
+                    Button("Remove API Key", role: .destructive) {
+                        showClearConfirm = true
+                    }
+                }
+                .listRowBackground(DS.ColorToken.surface)
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .background(DS.ColorToken.canvas)
+        .navigationTitle("Custom API Key")
+        .onAppear { isSet = APIKeyKeychainStore.isSet }
+        .confirmationDialog("Remove API Key?", isPresented: $showClearConfirm, titleVisibility: .visible) {
+            Button("Remove", role: .destructive) {
+                APIKeyKeychainStore.delete()
+                isSet = false
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The key will be deleted from the Keychain. AI features will fall back to the server-configured key.")
         }
     }
 }

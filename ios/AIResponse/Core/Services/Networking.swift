@@ -63,6 +63,9 @@ struct APIClient {
         if let token {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
+        if let apiKey = APIKeyKeychainStore.load(), !apiKey.isEmpty {
+            request.setValue(apiKey, forHTTPHeaderField: "X-OpenAI-Api-Key")
+        }
         return request
     }
 

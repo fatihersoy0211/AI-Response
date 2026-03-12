@@ -79,3 +79,50 @@ final class InMemorySessionStore: SessionStoring {
         storedSession = nil
     }
 }
+
+// MARK: - OpenAI API Key storage
+
+enum APIKeyKeychainStore {
+    private static let service = "com.fatihersoy.airesponse"
+    private static let account = "openaiApiKey"
+
+    static func save(_ key: String) {
+        guard let data = key.data(using: .utf8) else { return }
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: service,
+            kSecAttrAccount: account,
+        ]
+        let update: [CFString: Any] = [kSecValueData: data]
+        if SecItemUpdate(query as CFDictionary, update as CFDictionary) == errSecItemNotFound {
+            var add = query
+            add[kSecValueData] = data
+            SecItemAdd(add as CFDictionary, nil)
+        }
+    }
+
+    static func load() -> String? {
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: service,
+            kSecAttrAccount: account,
+            kSecReturnData: true,
+            kSecMatchLimit: kSecMatchLimitOne,
+        ]
+        var result: AnyObject?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+              let data = result as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    static func delete() {
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: service,
+            kSecAttrAccount: account,
+        ]
+        SecItemDelete(query as CFDictionary)
+    }
+
+    static var isSet: Bool { !(load() ?? "").isEmpty }
+}

@@ -77,13 +77,18 @@ def _respond_model() -> str:
     return os.getenv("OPENAI_RESPOND_MODEL", os.getenv("OPENAI_MODEL", _DEFAULT_RESPOND_MODEL)).strip()
 
 
-def get_openai_client() -> OpenAI:
-    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+def get_openai_client(
+    x_openai_api_key: str | None = Header(default=None),
+) -> OpenAI:
+    # Client-supplied key (from iOS Keychain) takes priority over server .env
+    api_key = (x_openai_api_key or os.getenv("OPENAI_API_KEY", "")).strip()
     if not api_key:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=(
-                "OPENAI_API_KEY is missing. A ChatGPT subscription is not an API key; "
+                "OPENAI_API_KEY is missing. Add your key in the app under "
+                "Settings → Privacy & Security → Custom OpenAI API Key, "
+                "or set OPENAI_API_KEY in the backend .env file. "
                 "Get your API key at: https://platform.openai.com/api-keys"
             ),
         )
@@ -248,7 +253,7 @@ def get_me(user: UserRecord = Depends(get_current_user)) -> UserProfileResponse:
     )
 
 
-@app.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
+@app.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 def logout(user: UserRecord = Depends(get_current_user), authorization: str | None = Header(default=None)):
     if authorization:
         token = authorization.removeprefix("Bearer ").strip()
@@ -326,12 +331,12 @@ def upload_text_source(
     project_id: str,
     payload: TextSourceUploadRequest,
     user: UserRecord = Depends(get_current_user),
+    client: OpenAI = Depends(get_openai_client),
 ) -> SourceResponse:
     project = store.get_project(user.user_id, project_id)
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
 
-    client = get_openai_client()
     analysis = analyze_source_text(client, project["name"], payload.title, payload.text)
 
     source = store.add_project_source(
@@ -351,12 +356,12 @@ def save_transcript_source(
     project_id: str,
     payload: TranscriptSaveRequest,
     user: UserRecord = Depends(get_current_user),
+    client: OpenAI = Depends(get_openai_client),
 ) -> SourceResponse:
     project = store.get_project(user.user_id, project_id)
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
 
-    client = get_openai_client()
     analysis = index_transcript(client, payload.transcript)
 
     source = store.add_project_source(
@@ -376,6 +381,7 @@ async def upload_file_source(
     project_id: str,
     file: UploadFile = File(...),
     user: UserRecord = Depends(get_current_user),
+    client: OpenAI = Depends(get_openai_client),
 ) -> SourceResponse:
     project = store.get_project(user.user_id, project_id)
     if not project:
@@ -395,7 +401,6 @@ async def upload_file_source(
             detail="Could not extract readable text from file",
         )
 
-    client = get_openai_client()
     analysis = analyze_source_text(client, project["name"], filename, extracted)
 
     source = store.add_project_source(
@@ -492,6 +497,7 @@ def import_audio_asset(
     project_id: str,
     payload: ImportAudioAssetRequest,
     user: UserRecord = Depends(get_current_user),
+    client: OpenAI = Depends(get_openai_client),
 ) -> ImportAudioAssetResponse:
     """
     Import an audio asset with optional transcript.
@@ -505,7 +511,6 @@ def import_audio_asset(
     # If transcript provided, index it for better AI context
     indexed_transcript = payload.transcript
     if payload.transcript and payload.transcript.strip():
-        client = get_openai_client()
         indexed_transcript = index_transcript(client, payload.transcript)
 
     transcript_status = (
@@ -639,7 +644,7 @@ def save_chat_turn(
     )
 
 
-@app.delete("/projects/{project_id}/chat", status_code=status.HTTP_204_NO_CONTENT)
+@app.delete("/projects/{project_id}/chat", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 def clear_chat_turns(
     project_id: str,
     user: UserRecord = Depends(get_current_user),
@@ -696,13 +701,16 @@ def save_summary(
 
 
 @app.post("/ai/respond")
-def ai_respond(payload: AIRespondRequest, user: UserRecord = Depends(get_current_user)):
+def ai_respond(
+    payload: AIRespondRequest,
+    user: UserRecord = Depends(get_current_user),
+    client: OpenAI = Depends(get_openai_client),
+):
     try:
         ctx = store.project_context_layered(user.user_id, payload.projectId)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
-    client = get_openai_client()
     model = _respond_model()
     user_display = (payload.userName or "").strip() or "the user"
 
@@ -760,7 +768,11 @@ def ai_respond(payload: AIRespondRequest, user: UserRecord = Depends(get_current
 
 
 @app.post("/ai/chat")
-def ai_chat(payload: AIChatRequest, user: UserRecord = Depends(get_current_user)):
+def ai_chat(
+    payload: AIChatRequest,
+    user: UserRecord = Depends(get_current_user),
+    client: OpenAI = Depends(get_openai_client),
+):
     """
     Multi-turn AI chat grounded strictly in the selected project's knowledge base.
     Each call receives the full conversation history so the model stays context-aware.
@@ -770,7 +782,6 @@ def ai_chat(payload: AIChatRequest, user: UserRecord = Depends(get_current_user)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
-    client = get_openai_client()
     model = _respond_model()
 
     user_display = (payload.userName or "").strip() or "the user"
