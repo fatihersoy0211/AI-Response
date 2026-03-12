@@ -1,15 +1,64 @@
 import AuthenticationServices
 import Foundation
 
+// MARK: - Apple credential validity
+
+enum AppleCredentialValidity {
+    case authorized
+    case invalidated    // revoked, notFound, or transferred
+    case unknown        // network / system error — treat conservatively
+}
+
+// MARK: - Auth state machine
+
+enum AuthState: Equatable {
+    case loading            // validating a saved session — show splash/loading UI
+    case authenticated(UserSession)
+    case unauthenticated
+
+    static func == (lhs: AuthState, rhs: AuthState) -> Bool {
+        switch (lhs, rhs) {
+        case (.loading, .loading), (.unauthenticated, .unauthenticated): return true
+        case (.authenticated(let a), .authenticated(let b)): return a.userId == b.userId
+        default: return false
+        }
+    }
+}
+
+// MARK: - AppViewModel
+
 @MainActor
 final class AppViewModel: ObservableObject {
-    @Published var session: UserSession?
+    @Published var authState: AuthState = .loading
     @Published var isLoading = false
     @Published var errorMessage: String?
+
+    // Lightweight UX session memory — stored in UserDefaults (not sensitive)
+    @Published private(set) var lastSignInProvider: String? =
+        UserDefaults.standard.string(forKey: "lastSignInProvider")
+    @Published private(set) var lastSignInAt: Date? = {
+        let ts = UserDefaults.standard.double(forKey: "lastSignInTimestamp")
+        return ts > 0 ? Date(timeIntervalSince1970: ts) : nil
+    }()
 
     private let authService: any AuthServicing
     private let sessionStore: any SessionStoring
     private let launchConfiguration: AppLaunchConfiguration
+
+    // MARK: - Backwards-compatible computed properties
+
+    /// Returns the current session when authenticated; nil otherwise.
+    var session: UserSession? {
+        guard case .authenticated(let s) = authState else { return nil }
+        return s
+    }
+
+    var isAuthenticated: Bool {
+        guard case .authenticated = authState else { return false }
+        return true
+    }
+
+    // MARK: - Init
 
     init(
         authService: any AuthServicing = AuthService(),
@@ -19,26 +68,49 @@ final class AppViewModel: ObservableObject {
         self.authService = authService
         self.sessionStore = sessionStore
         self.launchConfiguration = launchConfiguration
-        session = launchConfiguration.preloadedSession ?? sessionStore.loadSession()
-        if session != nil && !launchConfiguration.useMockServices {
-            Task { await verifySession() }
+
+        if let preloaded = launchConfiguration.preloadedSession {
+            // UI test fast-path: skip all validation
+            authState = .authenticated(preloaded)
+        } else if let saved = sessionStore.loadSession() {
+            authState = .loading
+            Task { await restoreSession(saved) }
+        } else {
+            authState = .unauthenticated
         }
     }
 
-    /// Ping /auth/me — if the stored token is rejected (401) silently log out.
-    private func verifySession() async {
-        guard let token = session?.accessToken else { return }
+    // MARK: - Session restoration
+
+    /// Full restoration path: Apple credential state check → backend token check → authenticate.
+    private func restoreSession(_ saved: UserSession) async {
+        // 1. If the user previously signed in with Apple, validate their credential state first.
+        //    This detects revoked accounts before we ever try the backend.
+        if let appleUserID = AppleIdentityStore.load() {
+            let credState = await appleCredentialState(for: appleUserID)
+            if credState == .invalidated {
+                // Apple has revoked or removed this credential — force re-login
+                signOutCleanly()
+                return
+            }
+            // .authorized or .unknown → proceed (network issues shouldn't sign the user out)
+        }
+
+        // 2. Verify the backend token is still accepted.
         do {
-            _ = try await authService.me(token: token)
+            try await authService.me(token: saved.accessToken)
+            completeAuthentication(saved, provider: UserDefaults.standard.string(forKey: "lastSignInProvider"))
         } catch let error as APIError where error.isUnauthorized {
-            sessionStore.deleteSession()
-            session = nil
+            // Token explicitly rejected — clear and re-login
+            signOutCleanly()
         } catch {
-            // Network error or other — keep the session, try again later
+            // Network unreachable or other transient error: restore session optimistically.
+            // The user should not be logged out because their Wi-Fi is off.
+            completeAuthentication(saved, provider: UserDefaults.standard.string(forKey: "lastSignInProvider"))
         }
     }
 
-    var isAuthenticated: Bool { session != nil }
+    // MARK: - Email / password
 
     func login(email: String, password: String) async {
         isLoading = true
@@ -46,8 +118,7 @@ final class AppViewModel: ObservableObject {
         defer { isLoading = false }
         do {
             let s = try await authService.login(email: email, password: password)
-            sessionStore.saveSession(s)
-            session = s
+            completeAuthentication(s, provider: "email")
         } catch {
             handle(error: error)
         }
@@ -59,15 +130,17 @@ final class AppViewModel: ObservableObject {
         defer { isLoading = false }
         do {
             let s = try await authService.register(name: name, email: email, password: password)
-            sessionStore.saveSession(s)
-            session = s
+            completeAuthentication(s, provider: "email")
         } catch {
             handle(error: error)
         }
     }
 
-    /// Called from the SignInWithAppleButton onCompletion handler.
-    func handleAppleSignIn(result: Result<ASAuthorization, Error>) async {
+    // MARK: - Apple Sign In
+
+    /// Called from LoginView's `SignInWithAppleButton` onCompletion handler.
+    /// `nonce` is the raw (unhashed) nonce generated in the view before the Apple sheet appeared.
+    func handleAppleSignIn(result: Result<ASAuthorization, Error>, nonce: String?) async {
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }
@@ -79,29 +152,47 @@ final class AppViewModel: ObservableObject {
                       let identityToken = String(data: tokenData, encoding: .utf8)
                 else { throw AppleSignInError.invalidCredential }
 
-                let nameParts = [cred.fullName?.givenName, cred.fullName?.familyName]
-                    .compactMap { $0 }
-                    .joined(separator: " ")
-                    .trimmingCharacters(in: .whitespaces)
+                // Persist the stable Apple userIdentifier for future credential-state checks.
+                // This is the only reliable long-lived Apple identity reference.
+                AppleIdentityStore.save(cred.user)
+
+                // Apple provides fullName and email ONLY on the very first authorization.
+                // Persist them immediately so they are never lost on subsequent sign-ins.
+                let givenName  = cred.fullName?.givenName?.trimmingCharacters(in: .whitespaces) ?? ""
+                let familyName = cred.fullName?.familyName?.trimmingCharacters(in: .whitespaces) ?? ""
+                let fullName   = [givenName, familyName].filter { !$0.isEmpty }.joined(separator: " ")
+
+                if !fullName.isEmpty {
+                    AppleProfileStore.saveName(fullName)
+                }
+                if let email = cred.email, !email.isEmpty {
+                    AppleProfileStore.saveEmail(email)
+                }
+
+                // Use persisted profile as fallback when Apple omits fields on returning sign-ins.
+                let resolvedName  = fullName.isEmpty  ? AppleProfileStore.loadName()  : fullName
+                let resolvedEmail = (cred.email?.isEmpty == false) ? cred.email : AppleProfileStore.loadEmail()
 
                 let credential = AppleCredential(
                     userIdentifier: cred.user,
                     identityToken: identityToken,
-                    name: nameParts.isEmpty ? nil : nameParts,
-                    email: cred.email
+                    name: resolvedName,
+                    email: resolvedEmail,
+                    nonce: nonce
                 )
                 let s = try await authService.loginWithApple(credential: credential)
-                sessionStore.saveSession(s)
-                session = s
+                completeAuthentication(s, provider: "apple")
 
             case .failure(let error):
                 if let authError = error as? ASAuthorizationError {
                     switch authError.code {
-                    case .canceled: return
+                    case .canceled:
+                        return  // User tapped Cancel — not an error, just dismiss
                     case .unknown:
-                        errorMessage = "Apple Sign In could not start. On the simulator: Settings → General → Sign in to iPhone. On device: Settings → [Your Name]."
+                        errorMessage = "Apple Sign In could not start.\nOn the simulator: Settings → General → Sign in to iPhone.\nOn device: make sure you are signed in to iCloud in Settings → [Your Name]."
                         return
-                    default: break
+                    default:
+                        throw authError
                     }
                 }
                 throw error
@@ -111,20 +202,59 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    private func handle(error: Error) {
-        if let api = error as? APIError, api.isUnauthorized {
-            sessionStore.deleteSession()
-            session = nil
-        } else {
-            errorMessage = error.localizedDescription
-        }
-    }
+    // MARK: - Sign out
 
     func logout() {
         if let s = session {
             Task { try? await authService.logout(token: s.accessToken) }
         }
+        signOutCleanly()
+    }
+
+    // MARK: - Helpers
+
+    private func completeAuthentication(_ session: UserSession, provider: String?) {
+        sessionStore.saveSession(session)
+        authState = .authenticated(session)
+
+        // Persist lightweight UX session memory (non-sensitive)
+        if let provider {
+            UserDefaults.standard.set(provider, forKey: "lastSignInProvider")
+            lastSignInProvider = provider
+        }
+        let now = Date()
+        UserDefaults.standard.set(now.timeIntervalSince1970, forKey: "lastSignInTimestamp")
+        lastSignInAt = now
+    }
+
+    private func signOutCleanly() {
         sessionStore.deleteSession()
-        session = nil
+        AppleIdentityStore.delete()
+        AppleProfileStore.delete()
+        authState = .unauthenticated
+    }
+
+    private func handle(error: Error) {
+        if let api = error as? APIError, api.isUnauthorized {
+            signOutCleanly()
+        } else {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Bridges ASAuthorizationAppleIDProvider's callback API into async/await.
+    private func appleCredentialState(for userID: String) async -> AppleCredentialValidity {
+        await withCheckedContinuation { continuation in
+            ASAuthorizationAppleIDProvider().getCredentialState(forUserID: userID) { state, _ in
+                switch state {
+                case .authorized:
+                    continuation.resume(returning: .authorized)
+                case .revoked, .notFound, .transferred:
+                    continuation.resume(returning: .invalidated)
+                @unknown default:
+                    continuation.resume(returning: .unknown)
+                }
+            }
+        }
     }
 }

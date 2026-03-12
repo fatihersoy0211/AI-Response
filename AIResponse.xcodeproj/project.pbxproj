@@ -526,6 +526,7 @@ A1C100000000000000000306 /* Sources */ = {
 				F86F1DDB594E3316C72436A5 /* AudioCaptureService.swift in Sources */,
 				4CB74923CBDC815548ABC73D /* AuthService.swift in Sources */,
 				A1B2C3D4E5F60004A1B2C3D4 /* KeychainService.swift in Sources */,
+				A1B2C3D4E5F60006A1B2C3D4 /* AppleSignInService.swift in Sources */,
 				DE255BCC1636C172D063EDA4 /* Components.swift in Sources */,
 				7BCAACE997A06C9CCA361BF0 /* ConversationView.swift in Sources */,
 				B1F2EB48528636790E6F63E7 /* ConversationViewModel.swift in Sources */,

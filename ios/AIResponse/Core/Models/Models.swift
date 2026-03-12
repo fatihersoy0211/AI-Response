@@ -43,6 +43,8 @@ struct AppleCredential {
     let identityToken: String
     let name: String?
     let email: String?
+    /// Raw (unhashed) nonce. Backend verifies sha256(nonce) == JWT `nonce` claim.
+    let nonce: String?
 }
 
 enum AppleSignInError: LocalizedError {

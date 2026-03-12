@@ -22,8 +22,9 @@ struct AuthService: AuthServicing {
             "identityToken": credential.identityToken,
             "userIdentifier": credential.userIdentifier,
         ]
-        if let name = credential.name { payload["name"] = name }
+        if let name  = credential.name  { payload["name"]  = name  }
         if let email = credential.email { payload["email"] = email }
+        if let nonce = credential.nonce { payload["nonce"] = nonce }
         let body = try JSONSerialization.data(withJSONObject: payload)
         let data = try await api.request(path: "/auth/apple", method: "POST", body: body)
         return try JSONDecoder().decode(AuthResponse.self, from: data).toSession()

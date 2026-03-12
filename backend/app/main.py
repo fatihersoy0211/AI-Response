@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -298,6 +299,17 @@ def apple_sign_in(payload: AppleAuthRequest) -> AuthResponse:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Identity token could not be verified",
         )
+
+    # Verify nonce when provided — prevents identity token replay attacks.
+    # The client sends the raw nonce; Apple embeds sha256(nonce) in the JWT.
+    if payload.nonce:
+        expected = hashlib.sha256(payload.nonce.encode("utf-8")).hexdigest()
+        jwt_nonce = claims.get("nonce", "")
+        if jwt_nonce != expected:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Nonce verification failed",
+            )
 
     # Prefer email from JWT claims (more reliable than client-sent email)
     email = claims.get("email") or payload.email or ""

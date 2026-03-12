@@ -72,6 +72,7 @@ class AppleAuthRequest(BaseModel):
     userIdentifier: str         # Apple's stable user ID (sub)
     name: str | None = None     # Only provided on first sign-in
     email: str | None = None    # Only provided on first sign-in
+    nonce: str | None = None    # Raw nonce; backend verifies sha256(nonce) == JWT nonce claim
 
 
 class ChatMessageSchema(BaseModel):

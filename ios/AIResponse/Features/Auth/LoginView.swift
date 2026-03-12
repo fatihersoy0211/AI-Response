@@ -10,6 +10,8 @@ struct LoginView: View {
     @State private var mode: AuthMode = .signIn
     @State private var forgotEmail = ""
     @State private var showForgot = false
+    /// Raw nonce generated just before the Apple sheet appears; captured by the completion closure.
+    @State private var currentNonce: String?
 
     var body: some View {
         NavigationStack {
@@ -28,15 +30,24 @@ struct LoginView: View {
                                 .foregroundStyle(DS.ColorToken.textSecondary)
                         }
 
-                        // ── Apple Sign In (standard, unmodified) ──────
+                        // ── Apple Sign In ─────────────────────────────
+                        // Uses the standard ASAuthorizationAppleIDButton via SwiftUI wrapper.
+                        // A fresh nonce is generated on each tap; its SHA256 is sent to Apple
+                        // so the backend can verify the JWT nonce claim (replay-attack prevention).
                         SignInWithAppleButton(.signIn) { request in
+                            let nonce = AppleSignInNonce.generate()
+                            currentNonce = nonce
                             request.requestedScopes = [.fullName, .email]
+                            request.nonce = AppleSignInNonce.sha256(nonce)
                         } onCompletion: { result in
-                            Task { await appViewModel.handleAppleSignIn(result: result) }
+                            Task {
+                                await appViewModel.handleAppleSignIn(result: result, nonce: currentNonce)
+                                currentNonce = nil
+                            }
                         }
                         .signInWithAppleButtonStyle(.black)
                         .frame(height: 54)
-                        // ⚠️ Do NOT apply clipShape/cornerRadius — it breaks tap events
+                        // ⚠️ Do NOT apply clipShape/cornerRadius — it breaks tap events on the native button
 
                         // ── Divider ───────────────────────────────────
                         HStack {
