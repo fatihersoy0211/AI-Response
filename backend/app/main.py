@@ -112,57 +112,60 @@ def get_current_user(authorization: str | None = Header(default=None)) -> UserRe
 # ---------------------------------------------------------------------------
 
 def analyze_source_text(client: OpenAI, project_name: str, title: str, text: str) -> str:
-    """
-    Extract a compact, actionable memory chunk from a source document.
-    Uses the Responses API with a separate instructions field (system role)
-    for clean prompt separation.
-    """
+    """Extract a compact, actionable memory chunk from a source document."""
     model = _analyze_model()
-
     try:
-        response = client.responses.create(
+        response = client.chat.completions.create(
             model=model,
-            instructions=(
-                "You are a knowledge extractor for a meeting assistant memory engine. "
-                "Your task: extract a short, bullet-point, actionable summary from the given source. "
-                "Only use information present in the source. Never fabricate. "
-                "Format: bullet points (•). Max 400 words. Match the language of the source text."
-            ),
-            input=(
-                f"Project: {project_name}\n"
-                f"Source title: {title}\n\n"
-                f"Source content:\n{text[:18_000]}"
-            ),
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a knowledge extractor for a meeting assistant memory engine. "
+                        "Extract a short, bullet-point, actionable summary from the given source. "
+                        "Only use information present in the source. Never fabricate. "
+                        "Format: bullet points (•). Max 400 words. Match the language of the source text."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"Project: {project_name}\n"
+                        f"Source title: {title}\n\n"
+                        f"Source content:\n{text[:18_000]}"
+                    ),
+                },
+            ],
             temperature=0.1,
-            max_output_tokens=500,
+            max_tokens=500,
         )
-        summary = (response.output_text or "").strip()
+        summary = (response.choices[0].message.content or "").strip()
         return summary if summary else "Source analyzed; no summary could be generated."
     except Exception as exc:
-        # Non-fatal — we store the source without analysis rather than blocking upload
         return f"Analysis failed: {exc}"
 
 
 def index_transcript(client: OpenAI, transcript: str) -> str:
-    """
-    Lightweight indexing of a meeting transcript (cheap, fast).
-    Extracts key points, decisions and action items only.
-    """
+    """Lightweight indexing of a meeting transcript — extracts key points and action items."""
     model = _analyze_model()
-
     try:
-        response = client.responses.create(
+        response = client.chat.completions.create(
             model=model,
-            instructions=(
-                "Extract only the following from the meeting transcript: "
-                "key points, decisions made, action items (who, when). "
-                "Write with bullet points (•). Max 250 words. Match the language of the transcript."
-            ),
-            input=f"Transcript:\n{transcript[:12_000]}",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Extract only the following from the meeting transcript: "
+                        "key points, decisions made, action items (who, when). "
+                        "Write with bullet points (•). Max 250 words. Match the language of the transcript."
+                    ),
+                },
+                {"role": "user", "content": f"Transcript:\n{transcript[:12_000]}"},
+            ],
             temperature=0.1,
-            max_output_tokens=350,
+            max_tokens=350,
         )
-        result = (response.output_text or "").strip()
+        result = (response.choices[0].message.content or "").strip()
         return result if result else "Transcript saved."
     except Exception:
         return "Transcript saved (indexing failed)."
@@ -735,24 +738,22 @@ def ai_respond(
 
     def event_stream():
         try:
-            # Use text_deltas iterator — cleaner than raw event loop,
-            # automatically handles all delta event types.
-            with client.responses.stream(
+            stream = client.chat.completions.create(
                 model=model,
-                instructions=system_instructions,
-                input=user_input,
+                messages=[
+                    {"role": "system", "content": system_instructions},
+                    {"role": "user", "content": user_input},
+                ],
                 temperature=0.2,
-                max_output_tokens=600,
-            ) as stream:
-                for delta in stream.text_deltas:
-                    if delta:
-                        yield f"data: {json.dumps({'delta': delta}, ensure_ascii=False)}\n\n"
-
-            # Always send done — even if the loop body raised no items
+                max_tokens=600,
+                stream=True,
+            )
+            for chunk in stream:
+                delta = chunk.choices[0].delta.content if chunk.choices else None
+                if delta:
+                    yield f"data: {json.dumps({'delta': delta}, ensure_ascii=False)}\n\n"
             yield 'data: {"done": true}\n\n'
-
         except Exception as exc:
-            # Send error as a proper SSE event, then close with done
             err_payload = {"error": str(exc)}
             yield f"data: {json.dumps(err_payload, ensure_ascii=False)}\n\n"
             yield 'data: {"done": true}\n\n'
@@ -762,7 +763,7 @@ def ai_respond(
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",   # disable nginx buffering
+            "X-Accel-Buffering": "no",
         },
     )
 
@@ -821,16 +822,20 @@ def ai_chat(
 
     def event_stream():
         try:
-            with client.responses.stream(
+            stream = client.chat.completions.create(
                 model=model,
-                instructions=system_instructions,
-                input=user_input,
+                messages=[
+                    {"role": "system", "content": system_instructions},
+                    {"role": "user", "content": user_input},
+                ],
                 temperature=0.3,
-                max_output_tokens=800,
-            ) as stream:
-                for delta in stream.text_deltas:
-                    if delta:
-                        yield f"data: {json.dumps({'delta': delta}, ensure_ascii=False)}\n\n"
+                max_tokens=800,
+                stream=True,
+            )
+            for chunk in stream:
+                delta = chunk.choices[0].delta.content if chunk.choices else None
+                if delta:
+                    yield f"data: {json.dumps({'delta': delta}, ensure_ascii=False)}\n\n"
             yield 'data: {"done": true}\n\n'
         except Exception as exc:
             yield f"data: {json.dumps({'error': str(exc)}, ensure_ascii=False)}\n\n"
