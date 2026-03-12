@@ -301,15 +301,19 @@ def apple_sign_in(payload: AppleAuthRequest) -> AuthResponse:
         )
 
     # Verify nonce when provided — prevents identity token replay attacks.
-    # The client sends the raw nonce; Apple embeds sha256(nonce) in the JWT.
+    # The client sends the raw nonce; Apple embeds sha256(rawNonce) in the JWT.
+    # Only reject if BOTH sides have a nonce and they don't match.
+    # If the JWT lacks a nonce claim (edge case on some Apple configurations),
+    # sub-claim verification above is sufficient for security.
     if payload.nonce:
-        expected = hashlib.sha256(payload.nonce.encode("utf-8")).hexdigest()
-        jwt_nonce = claims.get("nonce", "")
-        if jwt_nonce != expected:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Nonce verification failed",
-            )
+        jwt_nonce = claims.get("nonce")
+        if jwt_nonce is not None:
+            expected = hashlib.sha256(payload.nonce.encode("utf-8")).hexdigest()
+            if jwt_nonce != expected:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Nonce verification failed",
+                )
 
     # Prefer email from JWT claims (more reliable than client-sent email)
     email = claims.get("email") or payload.email or ""

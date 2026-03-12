@@ -189,7 +189,7 @@ final class AppViewModel: ObservableObject {
                     case .canceled:
                         return  // User tapped Cancel — not an error, just dismiss
                     case .unknown:
-                        errorMessage = "Apple Sign In could not start.\nOn the simulator: Settings → General → Sign in to iPhone.\nOn device: make sure you are signed in to iCloud in Settings → [Your Name]."
+                        errorMessage = "Apple Sign In could not start.\n\nSimulator: Open the Settings app inside the Simulator → tap \"Sign in to Your iPhone\" at the top of the list → sign in with your Apple ID.\n\nReal device: Settings → [Your Name] → make sure you are signed in to iCloud."
                         return
                     default:
                         throw authError
@@ -198,7 +198,14 @@ final class AppViewModel: ObservableObject {
                 throw error
             }
         } catch {
-            handle(error: error)
+            // During a sign-in attempt the user is NOT yet authenticated.
+            // A 401 from the backend means "auth failed" — show the error rather than
+            // silently calling signOutCleanly() (which shows no message at all).
+            if let api = error as? APIError {
+                errorMessage = api.localizedDescription
+            } else {
+                errorMessage = error.localizedDescription
+            }
         }
     }
 
