@@ -4,6 +4,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -77,6 +78,55 @@ def _analyze_model() -> str:
 
 def _respond_model() -> str:
     return os.getenv("OPENAI_RESPOND_MODEL", os.getenv("OPENAI_MODEL", _DEFAULT_RESPOND_MODEL)).strip()
+
+
+# ---------------------------------------------------------------------------
+# Language detection — Turkish vs English, threshold-based (30 %)
+# ---------------------------------------------------------------------------
+
+_TR_CHARS = frozenset("ğüşıöçĞÜŞİÖÇ")
+
+_TR_STOPWORDS = frozenset({
+    "ve", "bir", "bu", "da", "de", "ile", "ne", "en", "mi", "ya", "ise",
+    "için", "gibi", "daha", "çok", "var", "olan", "ben", "sen", "biz", "siz",
+    "ama", "fakat", "ancak", "lakin", "zira", "çünkü", "yani", "her", "o",
+    "şu", "nasıl", "neden", "nerede", "hangi", "kim", "onlar", "bizim",
+    "onun", "kadar", "sonra", "önce", "şimdi", "artık", "bile", "sadece",
+    "hatta", "ise", "olarak", "göre", "üzere", "bazı", "hiç", "hep",
+})
+
+_EN_STOPWORDS = frozenset({
+    "the", "and", "is", "in", "of", "to", "a", "that", "for", "on",
+    "are", "was", "it", "be", "with", "as", "by", "at", "an", "this",
+    "we", "our", "have", "has", "from", "will", "been", "would", "which",
+    "they", "their", "there", "what", "but", "not", "or", "so", "if",
+    "can", "do", "did", "about", "up", "out", "my", "your", "its",
+})
+
+
+def detect_language(text: str, threshold: float = 0.30) -> str:
+    """Return 'Turkish' or 'English'.
+
+    A word scores for Turkish if it contains a Turkish-specific character
+    OR is a Turkish stop-word.  If the Turkish word ratio >= threshold the
+    text is classified as Turkish; otherwise English.
+    """
+    if not text or not text.strip():
+        return "English"
+
+    words = re.findall(r"\b\w+\b", text.lower(), re.UNICODE)
+    if not words:
+        return "English"
+
+    total = len(words)
+    tr_hits = sum(
+        1 for w in words
+        if any(c in _TR_CHARS for c in w) or w in _TR_STOPWORDS
+    )
+
+    if tr_hits / total >= threshold:
+        return "Turkish"
+    return "English"
 
 
 def get_openai_client(
@@ -794,19 +844,28 @@ def ai_respond(
         manual_text=ctx.get("manual_text", ""),
     )
 
-    # System instructions — formal meeting speech style
+    # Detect language from transcript → fall back to manual text → project context
+    detection_text = (
+        payload.liveTranscript
+        or (payload.transcriptHistory or "")
+        or ctx.get("manual_text", "")
+        or ctx.get("transcript_history", "")
+    )
+    response_language = detect_language(detection_text)
+
+    # System instructions — formal meeting speech style, explicit language
     system_instructions = (
         f"You are preparing a formal spoken statement for {user_display} to deliver in a professional meeting. "
         "Your output must be a polished, meeting-ready spoken statement — not an explanation, not bullet points, not assistant-style text. "
-        "Write in formal, clear, professional spoken English. Use complete, well-formed sentences. "
+        f"You MUST write the entire response in {response_language}. Do not mix languages. "
+        f"Write in formal, clear, professional spoken {response_language}. Use complete, well-formed sentences. "
         "Structure the response so it flows naturally when spoken aloud in a meeting: "
         "open with a clear statement that establishes the topic, deliver the key message in a formal spoken structure, and close naturally. "
         "Draw only from the project knowledge base and meeting transcript provided. Never fabricate details not grounded in the project context. "
         "Do not begin with phrases like 'Here is your response', 'Certainly', or 'Of course'. "
         "Do not use bullet points. Do not use casual language. Do not reference being an AI. "
         "Keep it concise enough to deliver comfortably in under sixty seconds of speaking. "
-        "If no transcript is provided, produce a formal project status statement from the stored project knowledge. "
-        "Respond in the same language as the transcript (default to English if no transcript)."
+        "If no transcript is provided, produce a formal project status statement from the stored project knowledge."
     )
 
     def event_stream():
@@ -859,14 +918,19 @@ def ai_chat(
     model = _respond_model()
 
     user_display = (payload.userName or "").strip() or "the user"
+
+    # Detect language from the user's latest message (most reliable signal for chat)
+    latest_message = payload.messages[-1].content if payload.messages else ""
+    chat_language = detect_language(latest_message or ctx.get("manual_text", ""))
+
     system_instructions = (
         f"You are a professional meeting assistant helping {user_display} with project-grounded responses. "
         "Answer ONLY from the project knowledge base provided. Never fabricate details not present in the context. "
-        "Use formal, clear, professional language suitable for a corporate setting. "
-        "Write in complete sentences. Avoid casual wording, bullet points unless explicitly appropriate, and assistant-style prefaces. "
+        f"You MUST write the entire response in {chat_language}. Do not mix languages. "
+        f"Use formal, clear, professional {chat_language} suitable for a corporate setting. "
+        "Write in complete sentences. Avoid casual wording and assistant-style prefaces. "
         "Do not begin responses with 'Certainly', 'Of course', 'Here is', or similar filler phrases. "
-        "Do not reference being an AI. Be concise and direct. "
-        "Respond in the same language as the user's latest message."
+        "Do not reference being an AI. Be concise and direct."
     )
 
     # Build user input: layered project context + conversation history + current question
