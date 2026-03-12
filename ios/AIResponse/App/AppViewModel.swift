@@ -189,7 +189,7 @@ final class AppViewModel: ObservableObject {
                     case .canceled:
                         return  // User tapped Cancel — not an error, just dismiss
                     case .unknown:
-                        errorMessage = "Apple Sign In could not start.\n\nSimulator: Open the Settings app inside the Simulator → tap \"Sign in to Your iPhone\" at the top of the list → sign in with your Apple ID.\n\nReal device: Settings → [Your Name] → make sure you are signed in to iCloud."
+                        errorMessage = "Apple Sign In could not be completed. Please make sure you are signed in to iCloud by going to Settings → [Your Name]."
                         return
                     default:
                         throw authError

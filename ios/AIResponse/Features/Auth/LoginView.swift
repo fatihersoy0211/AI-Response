@@ -8,8 +8,6 @@ struct LoginView: View {
     @State private var email = ""
     @State private var password = ""
     @State private var mode: AuthMode = .signIn
-    @State private var forgotEmail = ""
-    @State private var showForgot = false
     /// Raw nonce generated just before the Apple sheet appears; captured by the completion closure.
     @State private var currentNonce: String?
 
@@ -73,9 +71,7 @@ struct LoginView: View {
                             }
                             DSInputField(title: "Work Email", text: $email, keyboard: .emailAddress)
                                 .textInputAutocapitalization(.never)
-                            if mode != .magicLink {
-                                DSSecureInputField(title: "Password", text: $password)
-                            }
+                            DSSecureInputField(title: "Password", text: $password)
                         }
                         .padding(DS.Spacing.x16)
                         .background(DS.ColorToken.surface)
@@ -110,26 +106,12 @@ struct LoginView: View {
                                     await appViewModel.login(email: email, password: password)
                                 case .signUp:
                                     await appViewModel.register(name: name, email: email, password: password)
-                                case .magicLink:
-                                    appViewModel.errorMessage = "Magic link is not yet available."
                                 }
                             }
-                        }
-
-                        if mode != .magicLink {
-                            Button("Forgot password?") {
-                                showForgot = true
-                            }
-                            .font(DS.Typography.caption)
-                            .foregroundStyle(DS.ColorToken.primary)
-                            .frame(maxWidth: .infinity, alignment: .center)
                         }
                     }
                     .padding(DS.Spacing.x24)
                 }
-            }
-            .sheet(isPresented: $showForgot) {
-                forgotPasswordSheet
             }
         }
     }
@@ -138,7 +120,6 @@ struct LoginView: View {
         HStack(spacing: DS.Spacing.x8) {
             authPill(.signIn, title: "Sign In")
             authPill(.signUp, title: "Sign Up")
-            authPill(.magicLink, title: "Magic Link")
         }
     }
 
@@ -157,7 +138,6 @@ struct LoginView: View {
         switch mode {
         case .signIn: return "Sign In"
         case .signUp: return "Create Account"
-        case .magicLink: return "Send Magic Link"
         }
     }
 
@@ -165,32 +145,6 @@ struct LoginView: View {
         switch mode {
         case .signIn: return email.isEmpty || password.isEmpty
         case .signUp: return name.isEmpty || email.isEmpty || password.isEmpty
-        case .magicLink: return email.isEmpty
-        }
-    }
-
-    private var forgotPasswordSheet: some View {
-        NavigationStack {
-            VStack(spacing: DS.Spacing.x16) {
-                Text("Forgot Password")
-                    .font(DS.Typography.title2)
-                Text("Enter your email and we will send reset instructions.")
-                    .font(DS.Typography.body)
-                    .foregroundStyle(DS.ColorToken.textSecondary)
-                DSInputField(title: "Email", text: $forgotEmail, keyboard: .emailAddress)
-                DSButton(title: "Send Reset Link", kind: .primary) {
-                    appViewModel.errorMessage = "Password reset is not yet available."
-                    showForgot = false
-                }
-                Spacer()
-            }
-            .padding(DS.Spacing.x24)
-            .background(DS.ColorToken.canvas)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Close") { showForgot = false }
-                }
-            }
         }
     }
 }
@@ -198,7 +152,6 @@ struct LoginView: View {
 private enum AuthMode {
     case signIn
     case signUp
-    case magicLink
 }
 
 private struct DSInputField: View {
