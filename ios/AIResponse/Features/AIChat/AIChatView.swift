@@ -239,7 +239,7 @@ struct AIChatView: View {
                     .font(.system(size: 14))
 
                 if viewModel.projects.isEmpty {
-                    Text("No projects — create one in Live Meeting")
+                    Text("No projects — create one in the Projects tab")
                         .font(DS.Typography.caption)
                         .foregroundStyle(DS.ColorToken.textSecondary)
                 } else {

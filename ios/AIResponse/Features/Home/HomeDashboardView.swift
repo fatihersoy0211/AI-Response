@@ -22,12 +22,21 @@ struct HomeDashboardView: View {
         }
     }
 
+    private var currentGreeting: String {
+        let hour = Calendar.current.component(.hour, from: Date())
+        switch hour {
+        case 5..<12: return "Good morning"
+        case 12..<17: return "Good afternoon"
+        default: return "Good evening"
+        }
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: DS.Spacing.x16) {
                 HStack {
                     VStack(alignment: .leading, spacing: DS.Spacing.x4) {
-                        Text("Good morning")
+                        Text(currentGreeting)
                             .font(DS.Typography.caption)
                             .foregroundStyle(DS.ColorToken.textSecondary)
                         Text(session.name)
@@ -234,7 +243,7 @@ struct UploadAudioSheet: View {
                     } else {
                         DSAIInsightCard(
                             title: "No projects found",
-                            message: "Create a project in the AI Assistant tab first, then upload audio."
+                            message: "Create a project in the Projects tab first, then upload audio."
                         )
                     }
 

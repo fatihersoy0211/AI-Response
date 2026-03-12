@@ -40,7 +40,7 @@ struct AppLaunchConfiguration {
     )
 
     var preloadedSession: UserSession? {
-        guard preloadAuthenticatedSession else { return nil }
+        guard isUITestMode && preloadAuthenticatedSession else { return nil }
         return UserSession(
             userId: "uitest-user",
             name: "Taylor",

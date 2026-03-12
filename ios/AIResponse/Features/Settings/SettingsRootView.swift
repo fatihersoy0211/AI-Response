@@ -50,10 +50,6 @@ struct SettingsRootView: View {
                 NavigationLink("Privacy & Security") { PrivacySecurityScreen() }
             }
 
-            Section("System States") {
-                NavigationLink("Empty & Error States") { StateGalleryScreen() }
-            }
-
             // ── Sign Out ──────────────────────────────────────────────
             Section {
                 Button(role: .destructive) {
@@ -135,7 +131,7 @@ struct ProfileScreen: View {
                 LabeledContent("Name", value: session?.name ?? "—")
                 LabeledContent("Email", value: session?.email ?? "—")
                 LabeledContent("Member since") {
-                    Text("2026")
+                    Text("—")
                         .foregroundStyle(DS.ColorToken.textSecondary)
                 }
             }
@@ -146,7 +142,7 @@ struct ProfileScreen: View {
                 HStack {
                     Label("Phone", systemImage: "phone")
                         .frame(width: 120, alignment: .leading)
-                    TextField("+90 555 000 00 00", text: $editPhone)
+                    TextField("e.g. +1 555 000 0000", text: $editPhone)
                         .keyboardType(.phonePad)
                         .multilineTextAlignment(.trailing)
                 }
@@ -381,7 +377,7 @@ struct SubscriptionScreen: View {
         .alert("Subscription", isPresented: $showUpgradeAlert) {
             Button("OK") {}
         } message: {
-            Text("This would connect to the App Store in production.")
+            Text("In-app purchases will be available in a future update.")
         }
     }
 
@@ -756,9 +752,6 @@ struct APIKeyScreen: View {
 // MARK: - Data Export
 
 struct DataExportScreen: View {
-    @State private var isExporting = false
-    @State private var exported = false
-
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: DS.Spacing.x16) {
@@ -769,24 +762,9 @@ struct DataExportScreen: View {
 
                 DSEmptyState(
                     icon: "tray.and.arrow.down",
-                    title: "No data to export yet",
-                    message: "Complete a few meetings to generate exportable data."
+                    title: "Export coming soon",
+                    message: "Data export will be available in a future update."
                 )
-
-                DSButton(
-                    title: exported ? "Download ZIP" : "Generate Export",
-                    icon: exported ? "tray.and.arrow.down" : "arrow.up.doc",
-                    kind: .primary,
-                    isLoading: isExporting
-                ) {
-                    if !exported {
-                        isExporting = true
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                            isExporting = false
-                            exported = true
-                        }
-                    }
-                }
             }
             .padding(DS.Spacing.x16)
         }

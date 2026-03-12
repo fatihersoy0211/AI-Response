@@ -169,7 +169,7 @@ struct AISummaryScreen: View {
                     DSEmptyState(
                         icon: "folder.badge.plus",
                         title: "No projects found",
-                        message: "Create a project in the AI Chat tab and add knowledge sources, then come back to generate a summary."
+                        message: "Create a project in the Projects tab and add knowledge sources, then come back to generate a summary."
                     )
                 }
 
