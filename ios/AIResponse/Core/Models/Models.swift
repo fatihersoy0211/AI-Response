@@ -234,6 +234,8 @@ protocol ProjectRepository {
     func buildAIGenerationContext(projectId: String, userName: String?, token: String) async throws -> AIGenerationContext
     func saveProjectNotes(projectId: String, text: String, token: String) async throws -> UserProject
     func loadProjectNotes(projectId: String, token: String) async throws -> String
+    func deleteProjectSource(projectId: String, sourceId: String, token: String) async throws
+    func deleteProject(projectId: String, token: String) async throws
 }
 
 // MARK: - AI Generation Context

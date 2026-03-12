@@ -34,12 +34,12 @@ struct MainTabView: View {
             .tag(MainTab.chat)
 
             NavigationStack {
-                GlobalSearchScreen()
+                ProjectsTabView(session: session, dependencies: dependencies)
             }
             .tabItem {
-                Label("Search", systemImage: "magnifyingglass")
+                Label("Projects", systemImage: "folder.fill")
             }
-            .tag(MainTab.search)
+            .tag(MainTab.projects)
 
             NavigationStack {
                 SettingsRootView()
@@ -62,6 +62,6 @@ enum MainTab {
     case home
     case meetings
     case chat
-    case search
+    case projects
     case settings
 }

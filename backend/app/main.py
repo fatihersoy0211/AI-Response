@@ -692,6 +692,29 @@ def save_chat_turn(
     )
 
 
+@app.delete("/projects/{project_id}/sources/{source_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
+def delete_project_source(
+    project_id: str,
+    source_id: str,
+    user: UserRecord = Depends(get_current_user),
+) -> None:
+    try:
+        store.delete_project_source(user.user_id, project_id, source_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@app.delete("/projects/{project_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
+def delete_project(
+    project_id: str,
+    user: UserRecord = Depends(get_current_user),
+) -> None:
+    try:
+        store.delete_project(user.user_id, project_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
 @app.delete("/projects/{project_id}/chat", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 def clear_chat_turns(
     project_id: str,

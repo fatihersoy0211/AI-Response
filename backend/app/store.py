@@ -539,3 +539,27 @@ class JsonStore:
         if not project:
             raise ValueError("Project not found")
         return project.get("audio_assets", [])
+
+    def delete_project_source(self, user_id: str, project_id: str, source_id: str) -> None:
+        with self._lock:
+            db = self._read()
+            found = False
+            for project in db["projects"].get(user_id, []):
+                if project["project_id"] == project_id:
+                    found = True
+                    for key in ("documents", "transcripts", "sources", "audio_assets"):
+                        project[key] = [
+                            s for s in project.get(key, [])
+                            if s.get("source_id") != source_id and s.get("asset_id") != source_id
+                        ]
+                    break
+            if not found:
+                raise ValueError("Project not found")
+            self._write(db)
+
+    def delete_project(self, user_id: str, project_id: str) -> None:
+        with self._lock:
+            db = self._read()
+            projects = db["projects"].get(user_id, [])
+            db["projects"][user_id] = [p for p in projects if p["project_id"] != project_id]
+            self._write(db)

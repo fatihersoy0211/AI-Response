@@ -293,6 +293,14 @@ struct UserContextService: ProjectRepository {
         await Self.localStore.loadNotes(projectId: projectId)
     }
 
+    func deleteProjectSource(projectId: String, sourceId: String, token: String) async throws {
+        _ = try await api.request(path: "/projects/\(projectId)/sources/\(sourceId)", method: "DELETE", token: token)
+    }
+
+    func deleteProject(projectId: String, token: String) async throws {
+        _ = try await api.request(path: "/projects/\(projectId)", method: "DELETE", token: token)
+    }
+
     private func fetchRemoteSnapshot(projectId: String, token: String) async throws -> ProjectContextSnapshot {
         let data = try await api.request(path: "/projects/\(projectId)/context/snapshot", token: token)
         return try JSONDecoder().decode(ProjectContextSnapshot.self, from: data)
@@ -619,6 +627,19 @@ actor InMemoryProjectRepository: ProjectRepository {
 
     func loadProjectNotes(projectId: String, token: String) async throws -> String {
         notesByProjectId[projectId] ?? ""
+    }
+
+    func deleteProjectSource(projectId: String, sourceId: String, token: String) async throws {
+        documentsByProjectId[projectId]?.removeAll { $0.sourceId == sourceId }
+        transcriptsByProjectId[projectId]?.removeAll { $0.sourceId == sourceId }
+        audioAssetsByProjectId[projectId]?.removeAll { $0.assetId == sourceId }
+    }
+
+    func deleteProject(projectId: String, token: String) async throws {
+        projects.removeAll { $0.projectId == projectId }
+        documentsByProjectId.removeValue(forKey: projectId)
+        transcriptsByProjectId.removeValue(forKey: projectId)
+        audioAssetsByProjectId.removeValue(forKey: projectId)
     }
 
     func storedSourceTexts(projectId: String) -> [String] {
