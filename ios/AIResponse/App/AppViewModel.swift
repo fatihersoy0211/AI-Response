@@ -99,7 +99,7 @@ final class AppViewModel: ObservableObject {
                     switch authError.code {
                     case .canceled: return
                     case .unknown:
-                        errorMessage = "Apple Sign In could not start. Please make sure you are signed in to your Apple ID in Settings → [Your Name]."
+                        errorMessage = "Apple Sign In could not start. On the simulator: Settings → General → Sign in to iPhone. On device: Settings → [Your Name]."
                         return
                     default: break
                     }

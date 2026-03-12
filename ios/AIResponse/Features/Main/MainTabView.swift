@@ -29,7 +29,7 @@ struct MainTabView: View {
                 AIChatView(session: session, dependencies: dependencies)
             }
             .tabItem {
-                Label("AI Chat", systemImage: "bubble.left.and.sparkles")
+                Label("AI Chat", systemImage: "wand.and.sparkles")
             }
             .tag(MainTab.chat)
 
