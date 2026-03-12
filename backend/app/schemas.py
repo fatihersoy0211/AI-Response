@@ -7,6 +7,26 @@ class RegisterRequest(BaseModel):
     password: str = Field(min_length=8, max_length=256)
 
 
+class VerificationRequiredResponse(BaseModel):
+    email: str
+    message: str = "verification_required"
+
+
+class VerifyEmailRequest(BaseModel):
+    email: EmailStr
+    code: str = Field(min_length=6, max_length=6)
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class VerifyResetRequest(BaseModel):
+    email: EmailStr
+    code: str = Field(min_length=6, max_length=6)
+    newPassword: str = Field(min_length=8, max_length=256)
+
+
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=256)

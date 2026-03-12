@@ -3,7 +3,8 @@ from __future__ import annotations
 import json
 import secrets
 import threading
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from hashlib import scrypt
 from pathlib import Path
@@ -19,6 +20,11 @@ class UserRecord:
     password_hash: str
     created_at: str
     apple_id: str = ""
+    email_verified: bool = True          # email/password accounts start verified; Apple always True
+    verification_otp: str = ""
+    otp_expires_at: float = 0.0
+    reset_otp: str = ""
+    reset_otp_expires_at: float = 0.0
 
 
 class JsonStore:
@@ -64,6 +70,11 @@ class JsonStore:
             password_hash=user.get("password_hash", ""),
             created_at=user["created_at"],
             apple_id=user.get("apple_id", ""),
+            email_verified=user.get("email_verified", True),
+            verification_otp=user.get("verification_otp", ""),
+            otp_expires_at=user.get("otp_expires_at", 0.0),
+            reset_otp=user.get("reset_otp", ""),
+            reset_otp_expires_at=user.get("reset_otp_expires_at", 0.0),
         )
 
     def register_user(self, name: str, email: str, password: str) -> UserRecord:
@@ -80,11 +91,80 @@ class JsonStore:
                 "password_hash": self._hash_password(password),
                 "apple_id": "",
                 "created_at": self._now(),
+                "email_verified": False,
+                "verification_otp": "",
+                "otp_expires_at": 0.0,
+                "reset_otp": "",
+                "reset_otp_expires_at": 0.0,
             }
             db["users"].append(user)
             db["projects"][user["user_id"]] = []
             self._write(db)
             return self._to_record(user)
+
+    def set_verification_otp(self, email: str, otp: str, ttl_seconds: int = 900) -> bool:
+        """Store a verification OTP for a given email. Returns False if email not found."""
+        with self._lock:
+            db = self._read()
+            normalized = email.strip().lower()
+            for user in db["users"]:
+                if user["email"] == normalized:
+                    user["verification_otp"] = otp
+                    user["otp_expires_at"] = time.time() + ttl_seconds
+                    self._write(db)
+                    return True
+            return False
+
+    def verify_email_otp(self, email: str, otp: str) -> UserRecord | None:
+        """Validate OTP, mark email as verified, return user. Returns None on failure."""
+        with self._lock:
+            db = self._read()
+            normalized = email.strip().lower()
+            for user in db["users"]:
+                if user["email"] != normalized:
+                    continue
+                if user.get("verification_otp") != otp:
+                    return None
+                if time.time() > user.get("otp_expires_at", 0):
+                    return None
+                user["email_verified"] = True
+                user["verification_otp"] = ""
+                user["otp_expires_at"] = 0.0
+                self._write(db)
+                return self._to_record(user)
+            return None
+
+    def set_reset_otp(self, email: str, otp: str, ttl_seconds: int = 900) -> bool:
+        """Store a password-reset OTP. Returns False if email not found."""
+        with self._lock:
+            db = self._read()
+            normalized = email.strip().lower()
+            for user in db["users"]:
+                if user["email"] == normalized:
+                    user["reset_otp"] = otp
+                    user["reset_otp_expires_at"] = time.time() + ttl_seconds
+                    self._write(db)
+                    return True
+            return False
+
+    def verify_reset_otp(self, email: str, otp: str, new_password: str) -> UserRecord | None:
+        """Validate reset OTP, update password, return user. Returns None on failure."""
+        with self._lock:
+            db = self._read()
+            normalized = email.strip().lower()
+            for user in db["users"]:
+                if user["email"] != normalized:
+                    continue
+                if user.get("reset_otp") != otp:
+                    return None
+                if time.time() > user.get("reset_otp_expires_at", 0):
+                    return None
+                user["password_hash"] = self._hash_password(new_password)
+                user["reset_otp"] = ""
+                user["reset_otp_expires_at"] = 0.0
+                self._write(db)
+                return self._to_record(user)
+            return None
 
     def authenticate_user(self, email: str, password: str) -> UserRecord | None:
         with self._lock:

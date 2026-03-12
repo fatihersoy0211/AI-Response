@@ -4,7 +4,10 @@ import base64
 import hashlib
 import json
 import os
+import random
 import re
+import smtplib
+from email.mime.text import MIMEText
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -21,6 +24,7 @@ from .schemas import (
     AudioAssetResponse,
     AuthResponse,
     ChatTurnResponse,
+    ForgotPasswordRequest,
     ImportAudioAssetRequest,
     ImportAudioAssetResponse,
     LoginRequest,
@@ -40,6 +44,9 @@ from .schemas import (
     TextSourceUploadRequest,
     TranscriptSaveRequest,
     UserProfileResponse,
+    VerificationRequiredResponse,
+    VerifyEmailRequest,
+    VerifyResetRequest,
 )
 from .store import JsonStore, UserRecord
 
@@ -127,6 +134,60 @@ def detect_language(text: str, threshold: float = 0.30) -> str:
     if tr_hits / total >= threshold:
         return "Turkish"
     return "English"
+
+
+# ---------------------------------------------------------------------------
+# OTP helpers
+# ---------------------------------------------------------------------------
+
+def _generate_otp() -> str:
+    return f"{random.randint(0, 999999):06d}"
+
+
+def _send_otp_email(to_address: str, otp: str, purpose: str) -> None:
+    """Send OTP via SMTP if configured; otherwise log to stdout for development."""
+    smtp_host = os.getenv("SMTP_HOST", "").strip()
+    smtp_port = int(os.getenv("SMTP_PORT", "587"))
+    smtp_user = os.getenv("SMTP_USER", "").strip()
+    smtp_pass = os.getenv("SMTP_PASS", "").strip()
+    smtp_from = os.getenv("SMTP_FROM", smtp_user).strip() or "noreply@airesponse.app"
+
+    if purpose == "verify":
+        subject = "Verify your email — AI Meeting Assist"
+        body = (
+            f"Your verification code is:\n\n"
+            f"  {otp}\n\n"
+            f"Enter this code in the app to activate your account.\n"
+            f"The code expires in 15 minutes."
+        )
+    else:
+        subject = "Reset your password — AI Meeting Assist"
+        body = (
+            f"Your password reset code is:\n\n"
+            f"  {otp}\n\n"
+            f"Enter this code in the app along with your new password.\n"
+            f"The code expires in 15 minutes."
+        )
+
+    if not smtp_host:
+        print(f"[EMAIL DEV] To: {to_address}\nSubject: {subject}\n\n{body}\n{'─'*40}")
+        return
+
+    msg = MIMEText(body, "plain", "utf-8")
+    msg["Subject"] = subject
+    msg["From"] = smtp_from
+    msg["To"] = to_address
+
+    try:
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
+            server.ehlo()
+            if smtp_port != 465:
+                server.starttls()
+            if smtp_user and smtp_pass:
+                server.login(smtp_user, smtp_pass)
+            server.sendmail(smtp_from, [to_address], msg.as_string())
+    except Exception as exc:
+        print(f"[EMAIL ERROR] Failed to send to {to_address}: {exc}")
 
 
 def get_openai_client(
@@ -283,13 +344,48 @@ def health() -> dict[str, str]:
     return {"status": "ok", "version": app.version}
 
 
-@app.post("/auth/register", response_model=AuthResponse)
-def register(payload: RegisterRequest) -> AuthResponse:
+@app.post("/auth/register", response_model=VerificationRequiredResponse)
+def register(payload: RegisterRequest) -> VerificationRequiredResponse:
     try:
         user = store.register_user(payload.name, payload.email, payload.password)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
+    otp = _generate_otp()
+    store.set_verification_otp(user.email, otp)
+    _send_otp_email(user.email, otp, "verify")
+    return VerificationRequiredResponse(email=user.email)
+
+
+@app.post("/auth/verify-email", response_model=AuthResponse)
+def verify_email(payload: VerifyEmailRequest) -> AuthResponse:
+    user = store.verify_email_otp(str(payload.email), payload.code)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired verification code.",
+        )
+    token = store.create_session(user.user_id)
+    return AuthResponse(userId=user.user_id, name=user.name, email=user.email, accessToken=token, refreshToken=None)
+
+
+@app.post("/auth/forgot-password", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
+def forgot_password(payload: ForgotPasswordRequest) -> None:
+    otp = _generate_otp()
+    found = store.set_reset_otp(str(payload.email), otp)
+    if found:
+        _send_otp_email(str(payload.email), otp, "reset")
+    # Always return 204 — don't reveal whether the email exists
+
+
+@app.post("/auth/verify-reset", response_model=AuthResponse)
+def verify_reset(payload: VerifyResetRequest) -> AuthResponse:
+    user = store.verify_reset_otp(str(payload.email), payload.code, payload.newPassword)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset code.",
+        )
     token = store.create_session(user.user_id)
     return AuthResponse(userId=user.user_id, name=user.name, email=user.email, accessToken=token, refreshToken=None)
 

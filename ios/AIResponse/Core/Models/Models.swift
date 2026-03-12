@@ -182,7 +182,11 @@ struct AIQueryRequest: Codable {
 
 protocol AuthServicing {
     func login(email: String, password: String) async throws -> UserSession
-    func register(name: String, email: String, password: String) async throws -> UserSession
+    /// Registers a new account. Sends a verification email; does NOT return a session.
+    func register(name: String, email: String, password: String) async throws
+    func verifyEmail(email: String, code: String) async throws -> UserSession
+    func forgotPassword(email: String) async throws
+    func verifyReset(email: String, code: String, newPassword: String) async throws -> UserSession
     func loginWithApple(credential: AppleCredential) async throws -> UserSession
     func me(token: String) async throws
     func logout(token: String) async throws

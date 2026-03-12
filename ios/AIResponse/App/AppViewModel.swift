@@ -32,6 +32,8 @@ final class AppViewModel: ObservableObject {
     @Published var authState: AuthState = .loading
     @Published var isLoading = false
     @Published var errorMessage: String?
+    /// Non-nil after registration — triggers email verification sheet in LoginView.
+    @Published var pendingVerificationEmail: String?
 
     // Lightweight UX session memory — stored in UserDefaults (not sensitive)
     @Published private(set) var lastSignInProvider: String? =
@@ -129,10 +131,46 @@ final class AppViewModel: ObservableObject {
         errorMessage = nil
         defer { isLoading = false }
         do {
-            let s = try await authService.register(name: name, email: email, password: password)
-            completeAuthentication(s, provider: "email")
+            try await authService.register(name: name, email: email, password: password)
+            pendingVerificationEmail = email
         } catch {
             handle(error: error)
+        }
+    }
+
+    func verifyEmail(email: String, code: String) async {
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+        do {
+            let s = try await authService.verifyEmail(email: email, code: code)
+            pendingVerificationEmail = nil
+            completeAuthentication(s, provider: "email")
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func forgotPassword(email: String) async {
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+        do {
+            try await authService.forgotPassword(email: email)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func verifyReset(email: String, code: String, newPassword: String) async {
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+        do {
+            let s = try await authService.verifyReset(email: email, code: code, newPassword: newPassword)
+            completeAuthentication(s, provider: "email")
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 
